@@ -4,4 +4,8 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    """Return a lightweight liveness response without checking external services."""
+    return {
+        "status": "ok",
+        "service": "AI Therapy Coach Backend",
+    }
