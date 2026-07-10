@@ -1,0 +1,1 @@
+"""Talking-avatar adapter package."""

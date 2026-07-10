@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: [postgres, qdrant]
+    volumes: ["./backend:/app"]
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [backend]
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: therapeutic
+      POSTGRES_PASSWORD: therapeutic
+      POSTGRES_DB: therapeutic_ai
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    ports: ["6333:6333", "6334:6334"]
+    volumes: ["qdrant_data:/qdrant/storage"]
+volumes:
+  postgres_data:
+  qdrant_data:
