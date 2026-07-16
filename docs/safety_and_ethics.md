@@ -1,9 +1,87 @@
-# Sécurité et éthique
+# Safety and ethics
 
-Le système est un outil de coaching conversationnel, **pas un psychologue, un médecin, un service d'urgence ou un dispositif médical**. Il ne pose aucun diagnostic, ne prescrit aucun traitement et ne doit jamais suggérer qu'il remplace un professionnel de santé.
+## Product boundary
 
-Les réponses doivent rester dans le périmètre de l'écoute active, du questionnement socratique, de la psychologie positive et de l'entretien motivationnel. Elles doivent éviter les affirmations médicales, la dépendance émotionnelle, la manipulation, la culpabilisation et les promesses de confidentialité absolue.
+AI Therapy Coach is a non-medical coaching tool. It is **not a psychologist, a
+doctor, an emergency service, or a medical device**. It must not diagnose a
+condition, prescribe or modify medication, claim professional credentials, or
+suggest that it replaces qualified care.
 
-En présence de signaux de crise, d'automutilation, de violence ou de danger immédiat, le flux normal doit être interrompu : recommander de contacter immédiatement les services d'urgence locaux, une ligne de crise adaptée au pays et une personne de confiance, puis encourager une prise en charge humaine. La détection automatique n'est jamais parfaite et doit faire l'objet de tests, supervision et procédures d'incident.
+The intended scope is active listening, reflective questions, positive
+psychology, motivational interviewing, and general coaching support. Even when
+the system uses retrieved documents, that content is not automatically safe,
+clinically valid, or appropriate for an individual.
 
-Avant production : consentement éclairé, âge minimal, politique de confidentialité, minimisation et durée de rétention, suppression/export des données, chiffrement, contrôle d'accès, audit de biais, tests adversariaux et validation juridique locale sont obligatoires.
+## Initial user-message screening
+
+`SafetyService` uses a small, version-controlled list of explicit English and
+French phrases. It reports the matching indicators and one or more named
+categories:
+
+- `self_harm`;
+- `suicidal_ideation`;
+- `medical_diagnosis_request`;
+- `crisis`;
+- `severe_distress`.
+
+The resulting levels are intentionally operational rather than clinical:
+
+| Level | Meaning | Current action |
+| --- | --- | --- |
+| `none` | No configured phrase matched | Continue normal coaching flow |
+| `caution` | Diagnosis request detected | Require referral to a professional |
+| `high` | Severe distress phrase detected | Require referral to a professional |
+| `critical` | Self-harm, suicide, or immediate-crisis phrase detected | Stop normal generation and show fixed emergency guidance |
+
+Critical handling does not invoke the LLM. It tells the user to contact local
+emergency services or a trusted person and not remain alone. Country-specific
+crisis resources must eventually be selected from verified configuration rather
+than invented by a model.
+
+### Limitations
+
+Keyword rules do not understand intent, negation, quotation, sarcasm, language
+variation, or clinical context. They can miss dangerous situations and can flag
+benign text. A match is **not** a risk assessment or diagnosis. No numeric
+confidence or fabricated medical classification is produced.
+
+Future improvements require clinically reviewed multilingual datasets, explicit
+negation/context handling, adversarial testing, monitoring, and a human-owned
+incident process. A future LLM-based safety classifier may only supplement these
+rules if its version, rationale, thresholds, failure modes, and escalation path
+remain auditable.
+
+## Assistant-response validation
+
+`ResponseValidator` applies explicit patterns after generation and returns named
+violations. It rejects responses that:
+
+- claim to be the user's psychologist;
+- assert a medical diagnosis;
+- prescribe, start, stop, or change medication;
+- omit a professional-help referral when the user-message assessment requires
+  one;
+- contain no usable text.
+
+Rejected model text is not returned to the user. These rules enforce product
+scope only; they do not prove that an accepted response is medically or ethically
+safe. Production validation should also cover unsupported citations, prompt
+injection leakage, coercive language, dependency encouragement, privacy leakage,
+and country-specific regulatory requirements.
+
+## Data and governance requirements
+
+Before production, the project needs:
+
+- informed consent and an appropriate minimum-age policy;
+- clear privacy, retention, export, correction, and deletion controls;
+- encryption, least-privilege access, and audited administrative access;
+- explicit consent for long-term conversational memory;
+- bias and multilingual performance evaluation;
+- clinically informed review of crisis wording and escalation procedures;
+- legal and regulatory review for every deployment jurisdiction;
+- monitoring that avoids logging sensitive message content or secrets.
+
+Safety rules, prompts, retrieved sources, provider models, and validator versions
+should be traceable so incidents can be investigated without pretending that
+automation replaces professional judgment.

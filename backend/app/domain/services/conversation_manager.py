@@ -75,7 +75,8 @@ class ConversationManager:
         if not user_message:
             raise ValueError("message cannot be empty")
 
-        if self.safety_service.requires_human_escalation(user_message):
+        safety_assessment = self.safety_service.assess(user_message)
+        if safety_assessment.requires_immediate_escalation:
             return ConversationResult(
                 message=self.safety_service.crisis_message(),
                 status="escalation_required",
@@ -94,7 +95,12 @@ class ConversationManager:
         )
         generated_response = await self.llm_provider.generate(prompt)
 
-        if not self.response_validator.validate(generated_response):
+        if not self.response_validator.validate(
+            generated_response,
+            professional_help_required=(
+                safety_assessment.professional_help_recommended
+            ),
+        ):
             return self._validation_failure(memory, chunks)
 
         return ConversationResult(

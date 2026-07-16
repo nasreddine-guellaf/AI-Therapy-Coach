@@ -60,9 +60,13 @@ class TrackingValidator(ResponseValidator):
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def validate(self, response: str) -> bool:
+    def validate(
+        self, response: str, *, professional_help_required: bool = False
+    ) -> bool:
         self.events.append("validation")
-        return super().validate(response)
+        return super().validate(
+            response, professional_help_required=professional_help_required
+        )
 
 
 def build_manager(
