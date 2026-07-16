@@ -1,23 +1,11 @@
-"""Provider-neutral retrieval orchestration service."""
+"""Provider-neutral retrieval orchestration adapter."""
 
-from dataclasses import dataclass, field
-from typing import Any
-
+from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.interfaces.vector_store import VectorStore
 from app.infrastructure.rag.embeddings import EmbeddingProvider
 
 
-@dataclass(frozen=True, slots=True)
-class RetrievedChunk:
-    """A relevant text chunk ready for prompt construction."""
-
-    id: str
-    text: str
-    score: float
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-
-class Retriever:
+class Retriever(ChunkRetriever):
     """Embed a query and retrieve matching chunks through injected ports."""
 
     def __init__(
