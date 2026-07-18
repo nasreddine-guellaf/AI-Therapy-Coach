@@ -1,15 +1,18 @@
 # AI Therapy Coach Backend
 
-Minimal FastAPI backend for the AI Therapy Coach project. The application exposes
-the initial HTTP routes while OpenAI, Qdrant, Whisper, and ElevenLabs remain
-interfaces or unimplemented adapters.
+FastAPI backend for a non-medical conversational coaching prototype. The text
+conversation flow uses a provider-neutral `LLMProvider`; the infrastructure
+adapters support OpenAI Responses and OpenRouter Chat Completions. Only the
+provider selected by `LLM_PROVIDER` is used. Qdrant, voice, and avatar
+integrations remain disabled placeholders.
 
 ## Requirements
 
 - Python 3.12+
 - `pip`
+- An API key for the selected LLM provider only when testing real responses
 
-## Run locally
+## Install and run locally
 
 From the `backend` directory:
 
@@ -20,27 +23,94 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-On macOS or Linux, activate the environment with:
+On macOS or Linux, activate with `source .venv/bin/activate` and use the same
+Python commands.
 
-```bash
-source .venv/bin/activate
-```
+Open:
 
-Then open:
-
-- Health endpoint: <http://127.0.0.1:8000/api/health>
+- Health: <http://127.0.0.1:8000/api/health>
 - Swagger UI: <http://127.0.0.1:8000/docs>
 - ReDoc: <http://127.0.0.1:8000/redoc>
 
-## Configuration
+## LLM provider configuration
 
-Settings are read from environment variables or the repository-level `.env`
-file. CORS allows `http://localhost:3000` by default. To override it, provide a
-JSON array through `CORS_ORIGINS`, for example:
+Copy the repository `.env.example` to `.env`. OpenAI remains the default:
 
 ```env
-CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_TIMEOUT_SECONDS=30
+OPENAI_MAX_OUTPUT_TOKENS=700
 ```
+
+To use OpenRouter instead:
+
+```env
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=your_key_here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=qwen/qwen3-next-80b-a3b-instruct:free
+```
+
+Never commit `.env` or expose either key to the frontend. The backend reads the
+selected credential from environment settings and passes it only to that
+provider's infrastructure adapter. It never returns prompts, keys, or raw SDK
+errors in API responses.
+
+`OPENAI_MODEL` is configurable so deployments can select an available model
+without changing domain code. The initial default uses a cost-sensitive text
+model. Before production, pin a tested model snapshot and maintain prompt evals.
+
+The adapter follows OpenAI's current recommendation to use the Responses API for
+new text-generation applications:
+
+- <https://developers.openai.com/api/docs/guides/text>
+- <https://developers.openai.com/api/docs/guides/error-codes>
+
+The OpenRouter adapter uses the OpenAI-compatible Chat Completions endpoint via
+`client.chat.completions.create`; it does not use the Responses API:
+
+- <https://openrouter.ai/docs/quickstart>
+- <https://openrouter.ai/docs/guides/community/openai-sdk>
+
+## Test the conversation endpoint
+
+With the backend running:
+
+```powershell
+$body = @{ message = "I feel overwhelmed and need a small next step" } |
+  ConvertTo-Json
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/conversation/message `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+If the selected provider's API key is missing, the endpoint still returns HTTP
+`202` with status `llm_unavailable` and a clean configuration message. No
+external request is attempted. With a valid key, the selected adapter generates
+a response, then the domain `ResponseValidator` checks it before it reaches the
+frontend.
+
+## Architecture flow
+
+```text
+FastAPI route
+  → ConversationManager
+  → SafetyService
+  → MemoryService / empty RAG adapter
+  → PromptBuilder
+  → LLMProvider
+  → OpenAILLMProvider (Responses API), or
+    OpenRouterLLMProvider (Chat Completions API)
+  → ResponseValidator
+  → structured API response
+```
+
+Routes and domain services do not import or instantiate the OpenAI SDK. Provider
+selection and adapter wiring live in `app/api/dependencies.py`.
 
 ## Tests
 
@@ -48,5 +118,12 @@ CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
 python -m pytest -q
 ```
 
-The health route is runnable without PostgreSQL, Qdrant, OpenAI, Whisper, or
-ElevenLabs.
+Unit tests inject fake LLM clients and make no real OpenAI or OpenRouter request.
+
+## Other configuration
+
+CORS allows `http://localhost:3000` by default. Override it with a JSON array:
+
+```env
+CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+```

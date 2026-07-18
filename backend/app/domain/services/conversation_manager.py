@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from app.domain.interfaces.llm_provider import LLMProvider
+from app.domain.interfaces.llm_provider import LLMProvider, LLMProviderError
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.services.memory_service import MemoryService
 from app.domain.services.prompt_builder import PromptBuilder
@@ -93,7 +93,16 @@ class ConversationManager:
             memory_context=memory,
             retrieved_context=[chunk.text for chunk in chunks],
         )
-        generated_response = await self.llm_provider.generate(prompt)
+        try:
+            generated_response = await self.llm_provider.generate(prompt)
+        except LLMProviderError as error:
+            return ConversationResult(
+                message=error.user_message,
+                status="llm_unavailable",
+                memory_items_used=len(memory),
+                rag_chunks_used=len(chunks),
+                source_ids=[chunk.id for chunk in chunks],
+            )
 
         if not self.response_validator.validate(
             generated_response,

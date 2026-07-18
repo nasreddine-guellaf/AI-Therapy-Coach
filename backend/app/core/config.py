@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,9 +17,19 @@ class Settings(BaseSettings):
     database_echo: bool = False
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
+    llm_provider: Literal["openai", "openrouter"] = "openai"
     openai_api_key: str | None = None
+    openai_model: str = "gpt-5.6-luna"
+    openai_timeout_seconds: float = 30.0
+    openai_max_output_tokens: int = 700
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "qwen/qwen3-next-80b-a3b-instruct:free"
     elevenlabs_api_key: str | None = None
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../.env"),
+        extra="ignore",
+    )
 
 
 @lru_cache

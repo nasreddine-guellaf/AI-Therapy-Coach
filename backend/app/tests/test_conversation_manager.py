@@ -2,7 +2,11 @@
 
 import asyncio
 
-from app.domain.interfaces.llm_provider import LLMProvider
+from app.domain.interfaces.llm_provider import (
+    LLMNotConfiguredError,
+    LLMPrompt,
+    LLMProvider,
+)
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.services.conversation_manager import (
     ConversationCommand,
@@ -48,9 +52,9 @@ class StubLLMProvider(LLMProvider):
     def __init__(self, events: list[str], response: str = "Would a short pause help?") -> None:
         self.events = events
         self.response = response
-        self.prompt = ""
+        self.prompt: LLMPrompt | None = None
 
-    async def generate(self, prompt: str) -> str:
+    async def generate(self, prompt: LLMPrompt) -> str:
         self.events.append("llm")
         self.prompt = prompt
         return self.response
@@ -96,8 +100,9 @@ def test_manager_orchestrates_context_generation_and_validation() -> None:
     )
 
     assert events == ["memory", "retrieval", "llm", "validation"]
-    assert "short exercises" in llm.prompt
-    assert "breathing pause" in llm.prompt
+    assert llm.prompt is not None
+    assert "short exercises" in llm.prompt.input
+    assert "breathing pause" in llm.prompt.input
     assert result.status == "completed"
     assert result.memory_items_used == 1
     assert result.rag_chunks_used == 1
@@ -134,3 +139,31 @@ def test_crisis_message_short_circuits_memory_retrieval_and_llm() -> None:
 
     assert result.status == "escalation_required"
     assert events == []
+
+
+def test_manager_returns_structured_response_when_llm_is_not_configured() -> None:
+    """Known provider failures should not escape as unhandled exceptions."""
+
+    class MissingProvider(LLMProvider):
+        async def generate(self, prompt: LLMPrompt) -> str:
+            raise LLMNotConfiguredError
+
+    events: list[str] = []
+    manager = ConversationManager(
+        memory_service=StubMemoryService(events),
+        retriever=StubRetriever(events),
+        prompt_builder=PromptBuilder(),
+        llm_provider=MissingProvider(),
+        response_validator=TrackingValidator(events),
+        safety_service=SafetyService(),
+    )
+
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(message="I feel tense", session_id="session-1")
+        )
+    )
+
+    assert result.status == "llm_unavailable"
+    assert "API key" in result.message
+    assert "validation" not in events
