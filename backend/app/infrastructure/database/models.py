@@ -74,14 +74,16 @@ class DocumentStatus(str, enum.Enum):
 
 
 class User(TimestampMixin, Base):
-    """Minimal user profile; authentication credentials are deliberately absent."""
+    """Authentication identity; only a one-way password hash is persisted."""
 
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(120))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     sessions: Mapped[list[CoachingSession]] = relationship(

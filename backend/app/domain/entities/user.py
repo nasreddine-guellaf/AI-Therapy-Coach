@@ -1,11 +1,18 @@
+"""Authentication-ready user domain entity."""
+
 from dataclasses import dataclass
-from uuid import UUID, uuid4
+from datetime import datetime
+from uuid import UUID
+
 
 @dataclass(slots=True)
 class User:
-    id: UUID
-    display_name: str
+    """Application user without framework or persistence dependencies."""
 
-    @classmethod
-    def create(cls, display_name: str) -> "User":
-        return cls(uuid4(), display_name)
+    id: UUID
+    email: str
+    hashed_password: str
+    full_name: str | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime

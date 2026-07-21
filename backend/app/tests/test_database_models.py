@@ -18,6 +18,22 @@ def test_memory_entry_has_future_retention_fields() -> None:
     assert {"user_id", "session_id", "source_message_id", "is_active", "expires_at"} <= columns
 
 
+def test_user_model_contains_only_hashed_authentication_credentials() -> None:
+    table = Base.metadata.tables["users"]
+    columns = {column.name for column in table.columns}
+    assert {
+        "id",
+        "email",
+        "hashed_password",
+        "full_name",
+        "is_active",
+        "created_at",
+        "updated_at",
+    } <= columns
+    assert "password" not in columns
+    assert table.c.email.unique
+
+
 def test_all_models_have_uuid_primary_keys() -> None:
     for table in Base.metadata.sorted_tables:
         primary_key = inspect(table).primary_key

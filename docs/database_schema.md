@@ -14,19 +14,21 @@ service boundaries. Timestamps use timezone-aware PostgreSQL values.
 
 ### `users`
 
-Purpose: minimal owner profile, ready to be linked to a future authentication
-identity without storing credentials now.
+Purpose: authentication identity and owner for future personal coaching data.
 
 | Field | Type | Rules | Purpose |
 | --- | --- | --- | --- |
 | `id` | UUID | Primary key | Public-safe user identifier |
-| `display_name` | VARCHAR(120) | Required | Non-authentication display label |
+| `email` | VARCHAR(320) | Required, unique | Normalized login identity |
+| `hashed_password` | VARCHAR(255) | Required | One-way Argon2 password hash |
+| `full_name` | VARCHAR(120) | Optional | User-facing display name |
 | `is_active` | BOOLEAN | Required, defaults to true | Future soft account disabling |
 | `created_at` | TIMESTAMPTZ | Required, server default | Creation audit time |
 | `updated_at` | TIMESTAMPTZ | Required, server managed | Last update time |
 
-No email, password, token, or API key is stored. Authentication can later add a
-separate identity table or an external provider identifier.
+Plaintext passwords, JWT access tokens, and API keys are never stored. The
+current MVP stores only an Argon2 password hash. OAuth identities and email
+verification can later be added without changing conversation ownership.
 
 ### `coaching_sessions`
 
@@ -132,3 +134,7 @@ users 1 ─── * coaching_sessions 1 ─── * messages
   correction, deletion, and retention workflows.
 - Alembic migrations, row-level authorization, encryption strategy, and full
   repositories/CRUD are intentionally deferred.
+
+For the local MVP, SQLAlchemy creates missing tables at startup when
+`DATABASE_AUTO_CREATE=true`. This does not alter an existing table schema;
+production and upgrades must use reviewed Alembic migrations.

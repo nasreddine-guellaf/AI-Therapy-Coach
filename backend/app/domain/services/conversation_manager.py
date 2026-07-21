@@ -1,6 +1,7 @@
 """Conversation use-case orchestration with provider-neutral dependencies."""
 
 from dataclasses import dataclass, field
+from uuid import UUID
 
 from app.domain.interfaces.llm_provider import LLMProvider, LLMProviderError
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
@@ -15,6 +16,7 @@ class ConversationCommand:
     """Framework-independent input for one user conversation turn."""
 
     message: str
+    user_id: UUID
     session_id: str | None = None
 
 

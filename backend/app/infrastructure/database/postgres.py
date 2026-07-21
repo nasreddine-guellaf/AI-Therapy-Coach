@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import settings
+from app.infrastructure.database.models import Base
 
 
 def create_database_engine(database_url: str | None = None) -> AsyncEngine:
@@ -20,6 +21,7 @@ def create_database_engine(database_url: str | None = None) -> AsyncEngine:
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
         echo=settings.database_echo,
+        connect_args={"timeout": settings.database_connect_timeout_seconds},
     )
 
 
@@ -32,13 +34,21 @@ async_session_factory = async_sessionmaker(
 
 
 async def get_database_session() -> AsyncIterator[AsyncSession]:
-    """Yield one transaction-scoped session for future FastAPI dependencies."""
+    """Yield one request-scoped session and commit successful mutations."""
     async with async_session_factory() as session:
         try:
             yield session
         except Exception:
             await session.rollback()
             raise
+        else:
+            await session.commit()
+
+
+async def initialize_database() -> None:
+    """Create missing MVP tables; production deployments should use Alembic."""
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
 
 
 async def close_database_engine() -> None:

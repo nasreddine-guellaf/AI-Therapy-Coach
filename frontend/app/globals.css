@@ -38,7 +38,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -49,6 +50,7 @@ a {
 
 button:focus-visible,
 textarea:focus-visible,
+input:focus-visible,
 a:focus-visible {
   outline: 3px solid rgba(40, 123, 104, 0.24);
   outline-offset: 2px;
@@ -129,6 +131,127 @@ a:focus-visible {
   fill: none;
   stroke: var(--brand);
   stroke-width: 1.8;
+}
+
+.auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.secondary-button,
+.primary-button {
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.secondary-button {
+  padding: 9px 12px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.auth-shell,
+.auth-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-loading {
+  color: var(--ink-soft);
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  padding: 34px;
+  display: grid;
+  gap: 28px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.auth-brand {
+  width: fit-content;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font: 700 30px/1.2 "Manrope", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.auth-card > div > p,
+.auth-switch {
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auth-form label span {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.auth-form input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: white;
+  color: var(--ink);
+}
+
+.primary-button {
+  min-height: 46px;
+  padding: 10px 16px;
+  background: var(--brand);
+  color: white;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.auth-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.auth-switch {
+  text-align: center;
+}
+
+.auth-switch a {
+  color: var(--brand-dark);
+  font-weight: 700;
 }
 
 .hero {

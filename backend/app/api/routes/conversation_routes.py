@@ -1,8 +1,12 @@
 """HTTP adapter for the conversation use case."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, status
 
+from app.api.auth_dependencies import get_current_user
 from app.api.dependencies import get_conversation_manager
+from app.domain.entities.user import User
 from app.domain.services.conversation_manager import (
     ConversationCommand,
     ConversationManager,
@@ -20,13 +24,15 @@ router = APIRouter(prefix="/conversation", tags=["conversation"])
 )
 async def send_message(
     request: ConversationRequest,
-    manager: ConversationManager = Depends(get_conversation_manager),
+    manager: Annotated[ConversationManager, Depends(get_conversation_manager)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ConversationResponse:
     """Translate HTTP input into a domain command and map its result back."""
     result = await manager.handle(
         ConversationCommand(
             message=request.message,
             session_id=request.session_id,
+            user_id=current_user.id,
         )
     )
     return ConversationResponse(

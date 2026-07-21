@@ -10,6 +10,7 @@ integrations remain disabled placeholders.
 
 - Python 3.12+
 - `pip`
+- PostgreSQL 16+ or Docker Desktop
 - An API key for the selected LLM provider only when testing real responses
 
 ## Install and run locally
@@ -31,6 +32,63 @@ Open:
 - Health: <http://127.0.0.1:8000/api/health>
 - Swagger UI: <http://127.0.0.1:8000/docs>
 - ReDoc: <http://127.0.0.1:8000/redoc>
+
+## PostgreSQL and authentication setup
+
+Start PostgreSQL from the repository root:
+
+```powershell
+docker compose up -d postgres
+```
+
+When running FastAPI directly on the host, configure `backend/.env`:
+
+```env
+DATABASE_URL=postgresql+asyncpg://therapeutic:therapeutic@localhost:5432/therapeutic_ai
+DATABASE_AUTO_CREATE=true
+DATABASE_CONNECT_TIMEOUT_SECONDS=5
+SECRET_KEY=replace-with-a-random-secret-of-at-least-32-characters
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+APP_ENV=development
+```
+
+Generate a local signing secret without committing it:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+The MVP creates missing tables on startup. `create_all` does not migrate an
+already-existing `users` table; use Alembic migrations for upgrades and set
+`DATABASE_AUTO_CREATE=false` in production.
+
+If startup logs `cause_type=InvalidPasswordError`, PostgreSQL is reachable but
+the credentials in `DATABASE_URL` do not match the running server. Update only
+your ignored `backend/.env` with the actual local PostgreSQL role/password, or
+create the documented `therapeutic` role and database. The API remains available
+for liveness checks, but registration, login, and `/auth/me` return a safe
+service-unavailable response until the database credentials work. Connection
+URLs and passwords are never written to logs.
+
+Register and login:
+
+```powershell
+$registration = @{
+  email = "person@example.com"
+  password = "a-local-password-123"
+  full_name = "Test Person"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/auth/register `
+  -ContentType "application/json" -Body $registration
+
+$login = @{ email = "person@example.com"; password = "a-local-password-123" } |
+  ConvertTo-Json
+$auth = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/auth/login `
+  -ContentType "application/json" -Body $login
+```
+
+Passwords are hashed with Argon2. Plaintext passwords, signing secrets, and
+access tokens are never stored in PostgreSQL.
 
 ## LLM provider configuration
 
@@ -85,6 +143,7 @@ Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8000/api/conversation/message `
   -ContentType "application/json" `
+  -Headers @{ Authorization = "Bearer $($auth.access_token)" } `
   -Body $body
 ```
 

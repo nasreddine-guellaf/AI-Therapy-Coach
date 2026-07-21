@@ -2,6 +2,7 @@ import type {
   ConversationRequest,
   ConversationResponse,
 } from "@/types/conversation";
+import { getAccessToken, logout } from "@/services/authService";
 
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
@@ -23,11 +24,18 @@ export async function sendMessage(
   signal?: AbortSignal,
 ): Promise<ConversationResponse> {
   let response: Response;
+  const accessToken = getAccessToken();
+  if (!accessToken) {
+    throw new ApiError("Please sign in before starting a conversation.", 401);
+  }
 
   try {
     response = await fetch(`${API_URL}/api/conversation/message`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
       body: JSON.stringify(request),
       signal,
     });
@@ -41,6 +49,10 @@ export async function sendMessage(
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      logout();
+      window.location.assign("/login");
+    }
     throw new ApiError(
       "The conversation service could not process your message.",
       response.status,

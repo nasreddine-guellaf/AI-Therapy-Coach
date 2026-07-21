@@ -1,6 +1,7 @@
 """Expected orchestration behavior for the conversation use case."""
 
 import asyncio
+from uuid import UUID
 
 from app.domain.interfaces.llm_provider import (
     LLMNotConfiguredError,
@@ -16,6 +17,9 @@ from app.domain.services.memory_service import MemoryService
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.safety_service import SafetyService
+
+
+USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 class StubMemoryService(MemoryService):
@@ -95,7 +99,9 @@ def test_manager_orchestrates_context_generation_and_validation() -> None:
 
     result = asyncio.run(
         manager.handle(
-            ConversationCommand(message="I feel tense", session_id="session-1")
+            ConversationCommand(
+                message="I feel tense", user_id=USER_ID, session_id="session-1"
+            )
         )
     )
 
@@ -116,7 +122,9 @@ def test_manager_rejects_an_invalid_llm_response() -> None:
 
     result = asyncio.run(
         manager.handle(
-            ConversationCommand(message="I feel tense", session_id="session-1")
+            ConversationCommand(
+                message="I feel tense", user_id=USER_ID, session_id="session-1"
+            )
         )
     )
 
@@ -132,7 +140,9 @@ def test_crisis_message_short_circuits_memory_retrieval_and_llm() -> None:
     result = asyncio.run(
         manager.handle(
             ConversationCommand(
-                message="Je pense au suicide", session_id="session-1"
+                message="Je pense au suicide",
+                user_id=USER_ID,
+                session_id="session-1",
             )
         )
     )
@@ -160,7 +170,9 @@ def test_manager_returns_structured_response_when_llm_is_not_configured() -> Non
 
     result = asyncio.run(
         manager.handle(
-            ConversationCommand(message="I feel tense", session_id="session-1")
+            ConversationCommand(
+                message="I feel tense", user_id=USER_ID, session_id="session-1"
+            )
         )
     )
 

@@ -85,3 +85,11 @@ Before production, the project needs:
 Safety rules, prompts, retrieved sources, provider models, and validator versions
 should be traceable so incidents can be investigated without pretending that
 automation replaces professional judgment.
+## Authentication and personal coaching data
+
+Authentication is required before chat access so future session history and
+personal coaching data can be associated with, and authorized for, the correct
+owner. The MVP uses short-lived signed access tokens and one-way password
+hashes. Authentication is only an access-control baseline: production still
+requires HTTPS, secure token storage, retention controls, audit logging, and a
+reviewed privacy policy.

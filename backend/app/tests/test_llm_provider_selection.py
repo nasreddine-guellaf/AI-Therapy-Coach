@@ -26,9 +26,9 @@ def test_openrouter_selection_logs_safe_configuration(monkeypatch, caplog) -> No
     provider = build_llm_provider()
 
     assert isinstance(provider, OpenRouterLLMProvider)
-    assert provider.model == "qwen/qwen3-next-80b-a3b-instruct:free"
+    assert provider.model == settings.openrouter_model
     assert provider.is_configured
     assert "provider=openrouter" in caplog.text
     assert "api_key_present=True" in caplog.text
-    assert "model=qwen/qwen3-next-80b-a3b-instruct:free" in caplog.text
+    assert f"model={settings.openrouter_model}" in caplog.text
     assert "super-secret-test-key" not in caplog.text

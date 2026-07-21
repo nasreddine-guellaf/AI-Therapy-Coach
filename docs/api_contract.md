@@ -1,11 +1,50 @@
 # API contract
 
-All routes use the `/api` prefix. The current prototype does not implement user
-authentication. Clients must not treat conversation output as medical advice.
+All routes use the `/api` prefix. Clients must not treat conversation output as
+medical advice. Protected endpoints require:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+## `POST /api/auth/register`
+
+Creates an account from `email`, `password`, and optional `full_name`. It
+returns HTTP `201` with basic user information and never returns the password
+hash. A duplicate email returns HTTP `409`.
+
+## `POST /api/auth/login`
+
+Accepts `email` and `password`, then returns a signed JWT and basic user data:
+
+```json
+{
+  "access_token": "signed-jwt",
+  "token_type": "bearer",
+  "user": {
+    "id": "user-uuid",
+    "email": "person@example.com",
+    "full_name": "Optional Name",
+    "is_active": true,
+    "created_at": "2026-07-18T20:00:00Z"
+  }
+}
+```
+
+Invalid credentials return the same HTTP `401` response whether the email or
+password was incorrect.
+
+## `GET /api/auth/me`
+
+Requires a Bearer token and returns the current active user. Missing, invalid,
+or expired tokens return HTTP `401`.
 
 ## `POST /api/conversation/message`
 
 Runs one safe text conversation turn.
+
+This endpoint requires a valid Bearer token. `user_id` is never accepted from
+the request; the backend derives it from the signed JWT subject.
 
 ### Request
 
@@ -44,9 +83,10 @@ Current status values:
 | `validation_failed` | Generated text failed scope/safety validation |
 | `llm_unavailable` | Missing key, timeout, connection, authentication, rate-limit, provider API, or empty-output failure |
 
-When `OPENAI_API_KEY` is absent, the endpoint returns a safe `llm_unavailable`
-response rather than raising a server error. The server never returns the API
-key, provider exception details, or rejected model text.
+When the selected provider key is absent, the endpoint returns a safe
+`llm_unavailable` response rather than raising a server error. The server never
+returns API keys, provider exception details, JWT signing secrets, password
+hashes, or rejected model text.
 
 The current RAG retriever and memory service return empty context. Their counts
 and `source_ids` remain part of the stable response for future integration.
