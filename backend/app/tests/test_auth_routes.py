@@ -17,6 +17,7 @@ from app.main import app
 
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+SESSION_ID = UUID("10000000-0000-0000-0000-000000000001")
 NOW = datetime.now(timezone.utc)
 USER = User(
     id=USER_ID,
@@ -47,6 +48,7 @@ class FakeConversationManager:
         return SimpleNamespace(
             message="A safe response.",
             status="completed",
+            session_id=SESSION_ID,
             memory_items_used=0,
             rag_chunks_used=0,
             source_ids=[],
@@ -117,3 +119,5 @@ def test_authenticated_conversation_uses_jwt_user_not_request_user_id() -> None:
 
     assert response.status_code == 202
     assert manager.command.user_id == USER_ID
+    assert "user_id" not in response.json()
+    assert response.json()["session_id"] == str(SESSION_ID)

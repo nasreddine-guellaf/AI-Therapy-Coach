@@ -7,12 +7,16 @@ from app.core.config import settings
 from app.domain.interfaces.llm_provider import LLMProvider
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.services.conversation_manager import ConversationManager
-from app.domain.services.memory_service import MemoryService
+from app.domain.services.conversation_history_service import ConversationHistoryService
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.safety_service import SafetyService
 from app.infrastructure.llm.openai_client import OpenAILLMProvider
 from app.infrastructure.llm.openrouter_client import OpenRouterLLMProvider
+from app.infrastructure.database.conversation_repositories import (
+    PostgreSQLConversationSessionRepository,
+    PostgreSQLMessageRepository,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -65,10 +69,20 @@ def build_llm_provider() -> LLMProvider:
 def get_conversation_manager() -> ConversationManager:
     """Compose the use case with the selected provider adapter."""
     return ConversationManager(
-        memory_service=MemoryService(),
+        session_repository=PostgreSQLConversationSessionRepository(),
+        message_repository=PostgreSQLMessageRepository(),
         retriever=_EmptyRetriever(),
         prompt_builder=PromptBuilder(),
         llm_provider=build_llm_provider(),
         response_validator=ResponseValidator(),
         safety_service=SafetyService(),
+    )
+
+
+@lru_cache
+def get_conversation_history_service() -> ConversationHistoryService:
+    """Compose authenticated history use cases with PostgreSQL adapters."""
+    return ConversationHistoryService(
+        session_repository=PostgreSQLConversationSessionRepository(),
+        message_repository=PostgreSQLMessageRepository(),
     )

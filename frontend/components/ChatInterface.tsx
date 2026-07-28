@@ -1,10 +1,20 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, sendMessage } from "@/services/apiClient";
-import type { ConversationMessage } from "@/types/conversation";
+import {
+  ApiError,
+  deleteConversation,
+  getConversation,
+  listConversations,
+  sendMessage,
+} from "@/services/apiClient";
+import type {
+  ConversationMessage,
+  ConversationSummary,
+} from "@/types/conversation";
 
+import { ConversationHistoryPanel } from "./ConversationHistoryPanel";
 import { MessageBubble } from "./MessageBubble";
 import { VoiceRecorder } from "./VoiceRecorder";
 
@@ -28,7 +38,32 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const refreshHistory = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const history = await listConversations(signal);
+      setConversations(history);
+      setHistoryError(null);
+    } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") {
+        return;
+      }
+      setHistoryError("Conversation history could not be loaded.");
+    } finally {
+      if (!signal?.aborted) setIsHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void refreshHistory(controller.signal);
+    return () => controller.abort();
+  }, [refreshHistory]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -48,7 +83,14 @@ export function ChatInterface() {
     setIsLoading(true);
 
     try {
-      const response = await sendMessage({ message: normalizedMessage });
+      const response = await sendMessage({
+        message: normalizedMessage,
+        session_id: sessionId,
+      });
+      if (response.session_id) {
+        setSessionId(response.session_id);
+        void refreshHistory();
+      }
       setMessages((current) => [
         ...current,
         createMessage("assistant", response.message),
@@ -70,14 +112,85 @@ export function ChatInterface() {
     void submitMessage(draft);
   }
 
+  function startNewConversation() {
+    if (isLoading) return;
+    setSessionId(undefined);
+    setMessages([]);
+    setDraft("");
+    setError(null);
+    setLastFailedMessage(null);
+  }
+
+  async function openConversation(selectedSessionId: string) {
+    if (isLoading) return;
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const conversation = await getConversation(selectedSessionId);
+      setSessionId(conversation.session_id);
+      setMessages(
+        conversation.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          createdAt: message.created_at,
+        })),
+      );
+      setError(null);
+      setLastFailedMessage(null);
+    } catch {
+      setHistoryError("This conversation could not be opened.");
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }
+
+  async function removeConversation(selectedSessionId: string) {
+    if (isLoading || !window.confirm("Delete this conversation permanently?")) {
+      return;
+    }
+    setHistoryError(null);
+    try {
+      await deleteConversation(selectedSessionId);
+      setConversations((current) =>
+        current.filter((item) => item.session_id !== selectedSessionId),
+      );
+      if (sessionId === selectedSessionId) startNewConversation();
+    } catch {
+      setHistoryError("This conversation could not be deleted.");
+    }
+  }
+
   return (
-    <section className="chat-card" aria-labelledby="conversation-title">
+    <div className="conversation-workspace">
+      <ConversationHistoryPanel
+        conversations={conversations}
+        activeSessionId={sessionId}
+        isLoading={isHistoryLoading}
+        error={historyError}
+        disabled={isLoading || isHistoryLoading}
+        onOpen={(selectedSessionId) => void openConversation(selectedSessionId)}
+        onDelete={(selectedSessionId) => void removeConversation(selectedSessionId)}
+      />
+      <section className="chat-card" aria-labelledby="conversation-title">
       <header className="chat-header">
         <div>
           <span className="eyebrow">Private reflection</span>
           <h2 id="conversation-title">Conversation</h2>
         </div>
-        <span className="session-badge">New session</span>
+        <div className="chat-header-actions">
+          <span className="session-badge">
+            {sessionId ? "Active session" : "New session"}
+          </span>
+          <button
+            className="new-conversation-button"
+            type="button"
+            onClick={startNewConversation}
+            disabled={isLoading || (!sessionId && messages.length === 0)}
+          >
+            New conversation
+          </button>
+        </div>
       </header>
 
       <div
@@ -183,6 +296,7 @@ export function ChatInterface() {
           medical decisions.
         </div>
       </form>
-    </section>
+      </section>
+    </div>
   );
 }

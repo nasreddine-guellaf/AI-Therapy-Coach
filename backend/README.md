@@ -41,11 +41,18 @@ Start PostgreSQL from the repository root:
 docker compose up -d postgres
 ```
 
+When running the full Docker Compose stack, migrate before starting the API:
+
+```powershell
+docker compose up -d postgres
+docker compose run --rm backend python -m alembic upgrade head
+docker compose up -d backend frontend
+```
+
 When running FastAPI directly on the host, configure `backend/.env`:
 
 ```env
-DATABASE_URL=postgresql+asyncpg://therapeutic:therapeutic@localhost:5432/therapeutic_ai
-DATABASE_AUTO_CREATE=true
+DATABASE_URL=postgresql+asyncpg://therapeutic:therapeutic@localhost:5433/therapeutic_ai
 DATABASE_CONNECT_TIMEOUT_SECONDS=5
 SECRET_KEY=replace-with-a-random-secret-of-at-least-32-characters
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -58,17 +65,49 @@ Generate a local signing secret without committing it:
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-The MVP creates missing tables on startup. `create_all` does not migrate an
-already-existing `users` table; use Alembic migrations for upgrades and set
-`DATABASE_AUTO_CREATE=false` in production.
+FastAPI never creates or modifies the schema during startup. Alembic is the
+only schema-management mechanism.
 
-If startup logs `cause_type=InvalidPasswordError`, PostgreSQL is reachable but
-the credentials in `DATABASE_URL` do not match the running server. Update only
-your ignored `backend/.env` with the actual local PostgreSQL role/password, or
-create the documented `therapeutic` role and database. The API remains available
-for liveness checks, but registration, login, and `/auth/me` return a safe
-service-unavailable response until the database credentials work. Connection
-URLs and passwords are never written to logs.
+Docker exposes PostgreSQL on host port `5433` to avoid conflicts with local
+PostgreSQL installations or stale Docker port proxies. Containers still connect
+to `postgres:5432`; Docker Compose supplies that internal URL to the backend.
+
+### Run database migrations
+
+From `backend`, with `DATABASE_URL` configured:
+
+```powershell
+python -m alembic upgrade head
+python -m alembic current
+```
+
+For a database already created by the pre-Alembic MVP, first back it up and
+verify that it contains the schema documented in `docs/database_schema.md`.
+Then adopt the baseline and apply the history index migration:
+
+```powershell
+python -m alembic stamp 20260721_0001
+python -m alembic upgrade head
+```
+
+Do not run `stamp` on an empty database: it records a revision without creating
+tables. Fresh databases must use `upgrade head` directly.
+
+After changing SQLAlchemy models, create and review a new migration:
+
+```powershell
+python -m alembic revision --autogenerate -m "describe schema change"
+python -m alembic upgrade head
+```
+
+Review generated upgrade and downgrade operations before applying them. In a
+deployment, run migrations as a separate release step before starting FastAPI.
+
+If `alembic upgrade head` reports a connection or authentication failure,
+verify the ignored `backend/.env` and the local PostgreSQL role/database. FastAPI
+startup intentionally does not test or mutate the schema; database-backed
+endpoints return safe service-unavailable responses when persistence cannot be
+reached. Connection URLs and passwords are never written to application logs.
 
 Register and login:
 
@@ -147,6 +186,25 @@ Invoke-RestMethod `
   -Body $body
 ```
 
+The response contains `session_id`. Send it with the next turn to reuse the
+same recent history:
+
+```powershell
+$first = Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8000/api/conversation/message `
+  -ContentType "application/json" `
+  -Headers @{ Authorization = "Bearer $($auth.access_token)" } `
+  -Body (@{ message = "I feel overwhelmed" } | ConvertTo-Json)
+
+$second = @{ message = "What did I just tell you?"; session_id = $first.session_id } |
+  ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8000/api/conversation/message `
+  -ContentType "application/json" `
+  -Headers @{ Authorization = "Bearer $($auth.access_token)" } `
+  -Body $second
+```
+
 If the selected provider's API key is missing, the endpoint still returns HTTP
 `202` with status `llm_unavailable` and a clean configuration message. No
 external request is attempted. With a valid key, the selected adapter generates
@@ -159,17 +217,26 @@ frontend.
 FastAPI route
   → ConversationManager
   → SafetyService
-  → MemoryService / empty RAG adapter
+  → ConversationSessionRepository / MessageRepository
+  → PostgreSQL adapters (store user turn, load up to 8 prior turns)
+  → empty RAG adapter
   → PromptBuilder
   → LLMProvider
   → OpenAILLMProvider (Responses API), or
     OpenRouterLLMProvider (Chat Completions API)
   → ResponseValidator
+  → PostgreSQL adapter (store validated assistant turn)
   → structured API response
 ```
 
 Routes and domain services do not import or instantiate the OpenAI SDK. Provider
 selection and adapter wiring live in `app/api/dependencies.py`.
+
+Conversation history is exposed through authenticated `GET /api/conversations`,
+`GET /api/conversations/{session_id}`, and
+`DELETE /api/conversations/{session_id}` endpoints. Repository queries always
+include the JWT user's ID; a foreign session returns the same `404` as a missing
+session.
 
 ## Tests
 
@@ -178,6 +245,15 @@ python -m pytest -q
 ```
 
 Unit tests inject fake LLM clients and make no real OpenAI or OpenRouter request.
+
+## Production TODOs
+
+- Define and enforce a conversation retention policy.
+- Add authenticated user data deletion and export workflows.
+- Establish an encryption strategy for sensitive message content.
+- Add idempotency keys so retried message deliveries cannot create duplicates.
+- Add cursor pagination before conversation histories can grow beyond the
+  current bounded list.
 
 ## Other configuration
 

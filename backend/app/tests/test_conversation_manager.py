@@ -1,181 +1,252 @@
-"""Expected orchestration behavior for the conversation use case."""
+"""Conversation persistence and orchestration behavior."""
 
 import asyncio
-from uuid import UUID
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID, uuid4
 
-from app.domain.interfaces.llm_provider import (
-    LLMNotConfiguredError,
-    LLMPrompt,
-    LLMProvider,
+import pytest
+
+from app.domain.entities.message import Message, MessageRole
+from app.domain.entities.session import CoachingSession
+from app.domain.entities.session import ConversationSummary
+from app.domain.interfaces.conversation_repository import (
+    ConversationSessionRepository,
+    MessageRepository,
 )
+from app.domain.interfaces.llm_provider import LLMNotConfiguredError, LLMPrompt, LLMProvider
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.services.conversation_manager import (
     ConversationCommand,
     ConversationManager,
+    ConversationSessionAccessError,
 )
-from app.domain.services.memory_service import MemoryService
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.safety_service import SafetyService
 
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+OTHER_USER_ID = UUID("00000000-0000-0000-0000-000000000002")
+SESSION_ID = UUID("10000000-0000-0000-0000-000000000001")
+NOW = datetime.now(timezone.utc)
 
 
-class StubMemoryService(MemoryService):
-    def __init__(self, events: list[str]) -> None:
-        self.events = events
+class FakeSessionRepository(ConversationSessionRepository):
+    def __init__(self) -> None:
+        self.sessions: dict[UUID, CoachingSession] = {
+            SESSION_ID: CoachingSession(
+                id=SESSION_ID,
+                user_id=USER_ID,
+                title="Existing",
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        }
+        self.created: list[CoachingSession] = []
 
-    async def recent_context(
-        self, session_id: str | None, limit: int = 10
-    ) -> list[str]:
-        self.events.append("memory")
-        assert session_id == "session-1"
-        return ["The user prefers short exercises."]
+    async def create(self, user_id: UUID, title: str | None) -> CoachingSession:
+        session = CoachingSession(user_id=user_id, title=title)
+        self.sessions[session.id] = session
+        self.created.append(session)
+        return session
+
+    async def get_owned(
+        self, session_id: UUID, user_id: UUID
+    ) -> CoachingSession | None:
+        session = self.sessions.get(session_id)
+        return session if session and session.user_id == user_id else None
+
+    async def list_for_user(
+        self, user_id: UUID, limit: int = 50
+    ) -> list[ConversationSummary]:
+        return []
+
+    async def delete_owned(self, session_id: UUID, user_id: UUID) -> bool:
+        session = await self.get_owned(session_id, user_id)
+        if session is None:
+            return False
+        del self.sessions[session_id]
+        return True
 
 
-class StubRetriever(ChunkRetriever):
-    def __init__(self, events: list[str]) -> None:
-        self.events = events
+class FakeMessageRepository(MessageRepository):
+    def __init__(self, history: list[Message] | None = None) -> None:
+        self.messages = list(history or [])
+        self.history_limit: int | None = None
+        self.excluded_message_id: UUID | None = None
 
+    async def add(
+        self,
+        session_id: UUID,
+        role: MessageRole,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Message:
+        message = Message(
+            id=uuid4(),
+            session_id=session_id,
+            role=role,
+            content=content,
+            metadata=metadata,
+        )
+        self.messages.append(message)
+        return message
+
+    async def list_recent(
+        self,
+        session_id: UUID,
+        limit: int,
+        *,
+        exclude_message_id: UUID | None = None,
+    ) -> list[Message]:
+        self.history_limit = limit
+        self.excluded_message_id = exclude_message_id
+        matches = [
+            item
+            for item in self.messages
+            if item.session_id == session_id and item.id != exclude_message_id
+        ]
+        return matches[-limit:]
+
+    async def list_for_session(self, session_id: UUID) -> list[Message]:
+        return [item for item in self.messages if item.session_id == session_id]
+
+
+class EmptyRetriever(ChunkRetriever):
     async def retrieve_relevant_chunks(
         self, query: str, top_k: int = 5
     ) -> list[RetrievedChunk]:
-        self.events.append("retrieval")
-        return [
-            RetrievedChunk(
-                id="chunk-1",
-                text="A short breathing pause can support reflection.",
-                score=0.92,
-                metadata={"page_number": 4},
-            )
-        ]
+        return []
 
 
 class StubLLMProvider(LLMProvider):
-    def __init__(self, events: list[str], response: str = "Would a short pause help?") -> None:
-        self.events = events
+    def __init__(self, response: str = "Would a short pause help?") -> None:
         self.response = response
         self.prompt: LLMPrompt | None = None
 
     async def generate(self, prompt: LLMPrompt) -> str:
-        self.events.append("llm")
         self.prompt = prompt
         return self.response
 
 
-class TrackingValidator(ResponseValidator):
-    def __init__(self, events: list[str]) -> None:
-        self.events = events
-
-    def validate(
-        self, response: str, *, professional_help_required: bool = False
-    ) -> bool:
-        self.events.append("validation")
-        return super().validate(
-            response, professional_help_required=professional_help_required
-        )
-
-
 def build_manager(
-    events: list[str], *, llm_response: str = "Would a short pause help?"
-) -> tuple[ConversationManager, StubLLMProvider]:
-    llm = StubLLMProvider(events, llm_response)
-    manager = ConversationManager(
-        memory_service=StubMemoryService(events),
-        retriever=StubRetriever(events),
-        prompt_builder=PromptBuilder(),
-        llm_provider=llm,
-        response_validator=TrackingValidator(events),
-        safety_service=SafetyService(),
+    *,
+    sessions: FakeSessionRepository | None = None,
+    messages: FakeMessageRepository | None = None,
+    llm: LLMProvider | None = None,
+) -> tuple[ConversationManager, FakeSessionRepository, FakeMessageRepository, LLMProvider]:
+    session_repository = sessions or FakeSessionRepository()
+    message_repository = messages or FakeMessageRepository()
+    provider = llm or StubLLMProvider()
+    return (
+        ConversationManager(
+            session_repository=session_repository,
+            message_repository=message_repository,
+            retriever=EmptyRetriever(),
+            prompt_builder=PromptBuilder(),
+            llm_provider=provider,
+            response_validator=ResponseValidator(),
+            safety_service=SafetyService(),
+            memory_limit=8,
+        ),
+        session_repository,
+        message_repository,
+        provider,
     )
-    return manager, llm
 
 
-def test_manager_orchestrates_context_generation_and_validation() -> None:
-    """Memory and RAG context should reach the LLM before validation."""
-    events: list[str] = []
-    manager, llm = build_manager(events)
+def test_new_session_and_both_messages_are_stored() -> None:
+    manager, sessions, messages, _ = build_manager()
 
     result = asyncio.run(
-        manager.handle(
-            ConversationCommand(
-                message="I feel tense", user_id=USER_ID, session_id="session-1"
-            )
-        )
+        manager.handle(ConversationCommand(message="I feel tense", user_id=USER_ID))
     )
 
-    assert events == ["memory", "retrieval", "llm", "validation"]
-    assert llm.prompt is not None
-    assert "short exercises" in llm.prompt.input
-    assert "breathing pause" in llm.prompt.input
+    assert len(sessions.created) == 1
+    assert result.session_id == sessions.created[0].id
+    assert [item.role for item in messages.messages] == [
+        MessageRole.USER,
+        MessageRole.ASSISTANT,
+    ]
     assert result.status == "completed"
-    assert result.memory_items_used == 1
-    assert result.rag_chunks_used == 1
-    assert result.source_ids == ["chunk-1"]
 
 
-def test_manager_rejects_an_invalid_llm_response() -> None:
-    """A rejected response must not be returned to the user."""
-    events: list[str] = []
-    manager, _ = build_manager(events, llm_response="   ")
+def test_existing_session_must_belong_to_authenticated_user() -> None:
+    manager, _, messages, _ = build_manager()
+
+    with pytest.raises(ConversationSessionAccessError):
+        asyncio.run(
+            manager.handle(
+                ConversationCommand(
+                    message="Private message",
+                    user_id=OTHER_USER_ID,
+                    session_id=SESSION_ID,
+                )
+            )
+        )
+
+    assert messages.messages == []
+
+
+def test_recent_history_is_loaded_into_prompt_without_duplicating_current_turn() -> None:
+    history = [
+        Message(SESSION_ID, MessageRole.USER, "Earlier concern"),
+        Message(SESSION_ID, MessageRole.ASSISTANT, "Earlier reflection"),
+    ]
+    message_repository = FakeMessageRepository(history)
+    provider = StubLLMProvider()
+    manager, _, messages, _ = build_manager(messages=message_repository, llm=provider)
 
     result = asyncio.run(
         manager.handle(
             ConversationCommand(
-                message="I feel tense", user_id=USER_ID, session_id="session-1"
+                message="Current concern", user_id=USER_ID, session_id=SESSION_ID
             )
         )
     )
 
+    assert provider.prompt is not None
+    assert "user: Earlier concern" in provider.prompt.input
+    assert "assistant: Earlier reflection" in provider.prompt.input
+    assert provider.prompt.input.count("Current concern") == 1
+    assert messages.history_limit == 8
+    assert messages.excluded_message_id is not None
+    assert result.memory_items_used == 2
+
+
+def test_invalid_response_is_not_stored_as_assistant_message() -> None:
+    manager, _, messages, _ = build_manager(llm=StubLLMProvider("   "))
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(message="I feel tense", user_id=USER_ID)
+        )
+    )
     assert result.status == "validation_failed"
-    assert result.message.strip()
+    assert [item.role for item in messages.messages] == [MessageRole.USER]
 
 
-def test_crisis_message_short_circuits_memory_retrieval_and_llm() -> None:
-    """Explicit crisis input must return fixed guidance without external calls."""
-    events: list[str] = []
-    manager, _ = build_manager(events)
-
+def test_crisis_message_short_circuits_persistence_and_llm() -> None:
+    manager, sessions, messages, _ = build_manager()
     result = asyncio.run(
         manager.handle(
-            ConversationCommand(
-                message="Je pense au suicide",
-                user_id=USER_ID,
-                session_id="session-1",
-            )
+            ConversationCommand(message="Je pense au suicide", user_id=USER_ID)
         )
     )
-
     assert result.status == "escalation_required"
-    assert events == []
+    assert sessions.created == []
+    assert messages.messages == []
 
 
-def test_manager_returns_structured_response_when_llm_is_not_configured() -> None:
-    """Known provider failures should not escape as unhandled exceptions."""
-
+def test_llm_unavailable_keeps_stored_user_turn_and_returns_session() -> None:
     class MissingProvider(LLMProvider):
         async def generate(self, prompt: LLMPrompt) -> str:
             raise LLMNotConfiguredError
 
-    events: list[str] = []
-    manager = ConversationManager(
-        memory_service=StubMemoryService(events),
-        retriever=StubRetriever(events),
-        prompt_builder=PromptBuilder(),
-        llm_provider=MissingProvider(),
-        response_validator=TrackingValidator(events),
-        safety_service=SafetyService(),
-    )
-
+    manager, _, messages, _ = build_manager(llm=MissingProvider())
     result = asyncio.run(
-        manager.handle(
-            ConversationCommand(
-                message="I feel tense", user_id=USER_ID, session_id="session-1"
-            )
-        )
+        manager.handle(ConversationCommand(message="I feel tense", user_id=USER_ID))
     )
-
     assert result.status == "llm_unavailable"
-    assert "API key" in result.message
-    assert "validation" not in events
+    assert result.session_id is not None
+    assert [item.role for item in messages.messages] == [MessageRole.USER]

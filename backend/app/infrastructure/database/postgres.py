@@ -8,9 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-
 from app.core.config import settings
-from app.infrastructure.database.models import Base
 
 
 def create_database_engine(database_url: str | None = None) -> AsyncEngine:
@@ -43,12 +41,6 @@ async def get_database_session() -> AsyncIterator[AsyncSession]:
             raise
         else:
             await session.commit()
-
-
-async def initialize_database() -> None:
-    """Create missing MVP tables; production deployments should use Alembic."""
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
 
 
 async def close_database_engine() -> None:

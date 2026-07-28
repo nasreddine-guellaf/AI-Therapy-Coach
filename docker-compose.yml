@@ -1,9 +1,15 @@
 services:
   backend:
     build: ./backend
-    env_file: .env
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://therapeutic:therapeutic@postgres:5432/therapeutic_ai
     ports: ["8000:8000"]
-    depends_on: [postgres, qdrant]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     volumes: ["./backend:/app"]
   frontend:
     build: ./frontend
@@ -17,8 +23,14 @@ services:
       POSTGRES_USER: therapeutic
       POSTGRES_PASSWORD: therapeutic
       POSTGRES_DB: therapeutic_ai
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U therapeutic -d therapeutic_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
   qdrant:
     image: qdrant/qdrant:v1.12.5
     ports: ["6333:6333", "6334:6334"]

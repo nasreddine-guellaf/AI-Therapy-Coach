@@ -21,7 +21,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -63,7 +63,6 @@ class SessionStatus(str, enum.Enum):
 class MessageRole(str, enum.Enum):
     USER = "user"
     ASSISTANT = "assistant"
-    SYSTEM = "system"
 
 
 class DocumentStatus(str, enum.Enum):
@@ -105,6 +104,7 @@ class CoachingSession(TimestampMixin, Base):
             name="valid_status",
         ),
         Index("ix_coaching_sessions_user_created", "user_id", "created_at"),
+        Index("ix_coaching_sessions_user_updated", "user_id", "updated_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -115,6 +115,7 @@ class CoachingSession(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    title: Mapped[str | None] = mapped_column(String(160))
     status: Mapped[str] = mapped_column(
         String(20), default=SessionStatus.ACTIVE.value, nullable=False
     )
@@ -138,7 +139,7 @@ class Message(TimestampMixin, Base):
     __tablename__ = "messages"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('user', 'assistant', 'system')",
+            "role IN ('user', 'assistant')",
             name="valid_role",
         ),
         Index("ix_messages_session_created", "session_id", "created_at"),
@@ -154,6 +155,7 @@ class Message(TimestampMixin, Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column("metadata", JSONB)
 
     session: Mapped[CoachingSession] = relationship(back_populates="messages")
     memory_entries: Mapped[list[MemoryEntry]] = relationship(

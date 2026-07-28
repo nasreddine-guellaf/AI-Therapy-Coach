@@ -42,6 +42,14 @@ Create an account at <http://localhost:3000/register>, or sign in at
 <http://localhost:3000/login>. Registration signs in automatically and redirects
 to the protected chat. Logging out removes the local token.
 
+The chat keeps the returned `session_id` in component state and sends it with
+each following turn. The history panel loads the authenticated user's recent
+conversations, reopens their ordered messages, and allows permanent deletion
+after confirmation. Refreshing leaves no conversation selected; choose one from
+the panel or use **New conversation** to clear the active session and visible
+messages. The frontend never sends a `user_id`; ownership comes only from the
+Bearer token.
+
 For this local MVP, only the JWT is stored under the versioned `localStorage`
 key `therapy-coach:access-token:v1`. Production should prefer a
 backend-for-frontend session with `HttpOnly`, `Secure`, `SameSite` cookies.
@@ -59,6 +67,7 @@ npm run build
 ## Structure
 
 - `components/ChatInterface.tsx`: chat state and user interaction
+- `components/ConversationHistoryPanel.tsx`: session list, reopen, and delete UI
 - `components/MessageBubble.tsx`: message presentation
 - `components/VoiceRecorder.tsx`: disabled voice placeholder
 - `components/AvatarPanel.tsx`: avatar/status placeholder
@@ -70,3 +79,11 @@ npm run build
 
 This interface is not an emergency or medical service. It must not be presented
 as a replacement for a qualified healthcare professional.
+
+## Production TODOs
+
+- Add clear retention controls and retention-policy messaging.
+- Add complete user data export and account deletion flows.
+- Move the local JWT to a secure backend-managed cookie session.
+- Add idempotency keys when submitting messages.
+- Define and communicate the encryption strategy for sensitive content.

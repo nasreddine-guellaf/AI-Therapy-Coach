@@ -58,7 +58,7 @@ the request; the backend derives it from the signed JWT subject.
 | Field | Type | Required | Rules |
 | --- | --- | --- | --- |
 | `message` | string | Yes | 1–5,000 characters |
-| `session_id` | string or null | No | Reserved for persisted memory |
+| `session_id` | UUID or null | No | Omit to create a session; reuse the returned ID for later turns |
 
 ### Response
 
@@ -68,11 +68,18 @@ HTTP `202 Accepted`:
 {
   "message": "What is one small task that would make today feel lighter?",
   "status": "completed",
-  "memory_items_used": 0,
+  "session_id": "10000000-0000-0000-0000-000000000001",
+  "memory_items_used": 4,
   "rag_chunks_used": 0,
   "source_ids": []
 }
 ```
+
+The backend stores the user turn first, loads up to the eight preceding turns
+from the same session, injects them into `CONVERSATION HISTORY`, and stores the
+validated assistant turn. A supplied session must belong to the JWT user;
+missing and foreign sessions both return HTTP `404`. Storage failures return a
+safe HTTP `503` without database details.
 
 Current status values:
 
@@ -88,8 +95,60 @@ When the selected provider key is absent, the endpoint returns a safe
 returns API keys, provider exception details, JWT signing secrets, password
 hashes, or rejected model text.
 
-The current RAG retriever and memory service return empty context. Their counts
-and `source_ids` remain part of the stable response for future integration.
+`memory_items_used` counts prior turns supplied to the prompt. The RAG retriever
+remains empty; `rag_chunks_used` and `source_ids` stay in the stable response for
+future integration.
+
+## `GET /api/conversations`
+
+Returns at most 50 sessions owned by the authenticated user, ordered by most
+recently updated first:
+
+```json
+[
+  {
+    "session_id": "10000000-0000-0000-0000-000000000001",
+    "title": "I feel overwhelmed",
+    "created_at": "2026-07-21T09:00:00Z",
+    "updated_at": "2026-07-21T09:05:00Z",
+    "last_message_preview": "What is one task that can wait?"
+  }
+]
+```
+
+The owner is always taken from the JWT. No `user_id` query or response field is
+supported.
+
+## `GET /api/conversations/{session_id}`
+
+Returns owned session metadata and messages ordered from oldest to newest:
+
+```json
+{
+  "session_id": "10000000-0000-0000-0000-000000000001",
+  "title": "I feel overwhelmed",
+  "created_at": "2026-07-21T09:00:00Z",
+  "updated_at": "2026-07-21T09:05:00Z",
+  "messages": [
+    {
+      "id": "message-uuid",
+      "role": "user",
+      "content": "I feel overwhelmed",
+      "metadata": null,
+      "created_at": "2026-07-21T09:00:00Z"
+    }
+  ]
+}
+```
+
+A missing or foreign session returns the same HTTP `404` response.
+
+## `DELETE /api/conversations/{session_id}`
+
+Permanently deletes an owned session and its messages through the database
+cascade, returning HTTP `204 No Content`. This MVP uses hard deletion; advanced
+retention and recovery policies remain production work. Missing and foreign
+sessions return HTTP `404`.
 
 ## `POST /api/documents/upload`
 
@@ -123,3 +182,6 @@ HTTP `200`:
 ```
 
 This is a liveness endpoint and does not call PostgreSQL, OpenAI, or Qdrant.
+
+History endpoints return HTTP `503` with a generic message when persistence is
+unavailable. Raw SQL, connection strings, and database errors are never exposed.

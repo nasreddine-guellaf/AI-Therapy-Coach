@@ -38,3 +38,12 @@ def test_all_models_have_uuid_primary_keys() -> None:
     for table in Base.metadata.sorted_tables:
         primary_key = inspect(table).primary_key
         assert [column.name for column in primary_key] == ["id"]
+
+
+def test_conversation_tables_support_titles_and_optional_metadata() -> None:
+    sessions = {
+        column.name for column in Base.metadata.tables["coaching_sessions"].columns
+    }
+    messages = {column.name for column in Base.metadata.tables["messages"].columns}
+    assert {"id", "user_id", "title", "created_at", "updated_at"} <= sessions
+    assert {"id", "session_id", "role", "content", "metadata", "created_at"} <= messages

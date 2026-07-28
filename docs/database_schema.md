@@ -37,6 +37,7 @@ Purpose: one bounded coaching conversation for a user.
 | Field | Type | Rules | Purpose |
 | --- | --- | --- | --- |
 | `id` | UUID | Primary key | Session identifier |
+| `title` | VARCHAR(160) | Optional | Label derived from the first message |
 | `user_id` | UUID | FK → `users.id`, required | Session owner |
 | `status` | VARCHAR(20) | `active`, `completed`, or `archived` | Lifecycle state |
 | `started_at` | TIMESTAMPTZ | Required, server default | Conversation start |
@@ -44,8 +45,9 @@ Purpose: one bounded coaching conversation for a user.
 | `created_at` | TIMESTAMPTZ | Required | Creation audit time |
 | `updated_at` | TIMESTAMPTZ | Required | Last update time |
 
-`(user_id, created_at)` is indexed for user history queries. Deleting a user
-cascades to their sessions.
+`(user_id, created_at)` supports creation-order queries, while
+`(user_id, updated_at)` supports the owner-scoped recent-conversation panel.
+Deleting a user cascades to their sessions.
 
 ### `messages`
 
@@ -55,8 +57,9 @@ Purpose: ordered conversation turns within a coaching session.
 | --- | --- | --- | --- |
 | `id` | UUID | Primary key | Message identifier |
 | `session_id` | UUID | FK → `coaching_sessions.id`, required | Parent session |
-| `role` | VARCHAR(20) | `user`, `assistant`, or `system` | Message author type |
+| `role` | VARCHAR(20) | `user` or `assistant` | Message author type |
 | `content` | TEXT | Required | Message body |
+| `metadata` | JSONB | Optional | Non-secret, provider-neutral turn metadata |
 | `created_at` | TIMESTAMPTZ | Required | Ordering and audit time |
 | `updated_at` | TIMESTAMPTZ | Required | Correction/audit support |
 
@@ -132,9 +135,23 @@ users 1 ─── * coaching_sessions 1 ─── * messages
   environment settings and must use the `postgresql+asyncpg://` driver.
 - Memory expiration, activation, and provenance prepare for future consent,
   correction, deletion, and retention workflows.
-- Alembic migrations, row-level authorization, encryption strategy, and full
-  repositories/CRUD are intentionally deferred.
+- Domain repository ports isolate `ConversationManager` from SQLAlchemy. Each
+  adapter operation uses a short-lived async session, so no transaction remains
+  open while waiting for the LLM.
+- Session lookup filters by both session ID and authenticated user ID. Missing
+  and foreign sessions intentionally produce the same not-found result.
+- Alembic owns all schema changes. FastAPI startup does not run `create_all` or
+  compatibility DDL.
 
-For the local MVP, SQLAlchemy creates missing tables at startup when
-`DATABASE_AUTO_CREATE=true`. This does not alter an existing table schema;
-production and upgrades must use reviewed Alembic migrations.
+The initial baseline is `20260721_0001`; `20260721_0002` adds the history-listing
+index. Fresh databases run `python -m alembic upgrade head`. Databases created by
+the earlier MVP must be backed up, verified, stamped at `20260721_0001`, and then
+upgraded to head.
+
+## Production TODOs
+
+- Define retention and automatic expiration rules for coaching data.
+- Provide authenticated deletion and portable export of all user data.
+- Define encryption at rest, field-level encryption, and key rotation strategy
+  for sensitive content.
+- Add idempotency keys and uniqueness rules for retried message deliveries.

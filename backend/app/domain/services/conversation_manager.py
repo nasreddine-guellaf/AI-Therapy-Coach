@@ -3,9 +3,15 @@
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from app.domain.entities.message import MessageRole
+from app.domain.entities.session import CoachingSession
+from app.domain.interfaces.conversation_repository import (
+    ConversationRepositoryError,
+    ConversationSessionRepository,
+    MessageRepository,
+)
 from app.domain.interfaces.llm_provider import LLMProvider, LLMProviderError
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
-from app.domain.services.memory_service import MemoryService
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.safety_service import SafetyService
@@ -17,7 +23,7 @@ class ConversationCommand:
 
     message: str
     user_id: UUID
-    session_id: str | None = None
+    session_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +32,7 @@ class ConversationResult:
 
     message: str
     status: str
+    session_id: UUID | None = None
     memory_items_used: int = 0
     rag_chunks_used: int = 0
     source_ids: list[str] = field(default_factory=list)
@@ -41,14 +48,15 @@ class ConversationManager:
 
     def __init__(
         self,
-        memory_service: MemoryService,
+        session_repository: ConversationSessionRepository,
+        message_repository: MessageRepository,
         retriever: ChunkRetriever,
         prompt_builder: PromptBuilder,
         llm_provider: LLMProvider,
         response_validator: ResponseValidator,
         safety_service: SafetyService,
         *,
-        memory_limit: int = 10,
+        memory_limit: int = 8,
         retrieval_top_k: int = 5,
     ) -> None:
         if memory_limit <= 0:
@@ -56,7 +64,8 @@ class ConversationManager:
         if retrieval_top_k <= 0:
             raise ValueError("retrieval_top_k must be greater than zero")
 
-        self.memory_service = memory_service
+        self.session_repository = session_repository
+        self.message_repository = message_repository
         self.retriever = retriever
         self.prompt_builder = prompt_builder
         self.llm_provider = llm_provider
@@ -84,9 +93,24 @@ class ConversationManager:
                 status="escalation_required",
             )
 
-        memory = await self.memory_service.recent_context(
-            command.session_id, limit=self.memory_limit
-        )
+        try:
+            session = await self._resolve_session(command, user_message)
+            stored_user_message = await self.message_repository.add(
+                session.id,
+                MessageRole.USER,
+                user_message,
+            )
+            recent_messages = await self.message_repository.list_recent(
+                session.id,
+                self.memory_limit,
+                exclude_message_id=stored_user_message.id,
+            )
+        except ConversationRepositoryError as error:
+            raise ConversationPersistenceUnavailableError from error
+
+        memory = [
+            f"{message.role.value}: {message.content}" for message in recent_messages
+        ]
         chunks = await self.retriever.retrieve_relevant_chunks(
             user_message, top_k=self.retrieval_top_k
         )
@@ -101,6 +125,7 @@ class ConversationManager:
             return ConversationResult(
                 message=error.user_message,
                 status="llm_unavailable",
+                session_id=session.id,
                 memory_items_used=len(memory),
                 rag_chunks_used=len(chunks),
                 source_ids=[chunk.id for chunk in chunks],
@@ -112,11 +137,22 @@ class ConversationManager:
                 safety_assessment.professional_help_recommended
             ),
         ):
-            return self._validation_failure(memory, chunks)
+            return self._validation_failure(session.id, memory, chunks)
+
+        assistant_response = generated_response.strip()
+        try:
+            await self.message_repository.add(
+                session.id,
+                MessageRole.ASSISTANT,
+                assistant_response,
+            )
+        except ConversationRepositoryError as error:
+            raise ConversationPersistenceUnavailableError from error
 
         return ConversationResult(
-            message=generated_response.strip(),
+            message=assistant_response,
             status="completed",
+            session_id=session.id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
             source_ids=[chunk.id for chunk in chunks],
@@ -124,7 +160,9 @@ class ConversationManager:
 
     @staticmethod
     def _validation_failure(
-        memory: list[str], chunks: list[RetrievedChunk]
+        session_id: UUID,
+        memory: list[str],
+        chunks: list[RetrievedChunk],
     ) -> ConversationResult:
         """Return a safe failure without leaking a rejected model response."""
         return ConversationResult(
@@ -133,7 +171,31 @@ class ConversationManager:
                 "quality checks. Please try rephrasing your message."
             ),
             status="validation_failed",
+            session_id=session_id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
             source_ids=[chunk.id for chunk in chunks],
         )
+
+    async def _resolve_session(
+        self, command: ConversationCommand, message: str
+    ) -> CoachingSession:
+        """Create a session or enforce ownership of the supplied session."""
+        if command.session_id is None:
+            title = message[:157] + "..." if len(message) > 160 else message
+            return await self.session_repository.create(command.user_id, title)
+
+        session = await self.session_repository.get_owned(
+            command.session_id, command.user_id
+        )
+        if session is None:
+            raise ConversationSessionAccessError
+        return session
+
+
+class ConversationSessionAccessError(LookupError):
+    """The requested session does not exist or belongs to another user."""
+
+
+class ConversationPersistenceUnavailableError(RuntimeError):
+    """Conversation persistence is temporarily unavailable."""

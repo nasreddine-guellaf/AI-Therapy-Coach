@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     database_max_overflow: int = 10
     database_echo: bool = False
     database_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
-    database_auto_create: bool = True
     secret_key: str | None = None
     access_token_expire_minutes: int = Field(default=30, gt=0, le=10_080)
     qdrant_url: str = "http://localhost:6333"

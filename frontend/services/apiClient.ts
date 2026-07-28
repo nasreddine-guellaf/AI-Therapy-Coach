@@ -1,6 +1,8 @@
 import type {
+  ConversationDetail,
   ConversationRequest,
   ConversationResponse,
+  ConversationSummary,
 } from "@/types/conversation";
 import { getAccessToken, logout } from "@/services/authService";
 
@@ -23,6 +25,46 @@ export async function sendMessage(
   request: ConversationRequest,
   signal?: AbortSignal,
 ): Promise<ConversationResponse> {
+  return authenticatedRequest<ConversationResponse>(
+    "/api/conversation/message",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal,
+    },
+  );
+}
+
+export async function listConversations(
+  signal?: AbortSignal,
+): Promise<ConversationSummary[]> {
+  return authenticatedRequest<ConversationSummary[]>("/api/conversations", {
+    signal,
+  });
+}
+
+export async function getConversation(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<ConversationDetail> {
+  return authenticatedRequest<ConversationDetail>(
+    `/api/conversations/${encodeURIComponent(sessionId)}`,
+    { signal },
+  );
+}
+
+export async function deleteConversation(sessionId: string): Promise<void> {
+  await authenticatedRequest<void>(
+    `/api/conversations/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+  );
+}
+
+async function authenticatedRequest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
   let response: Response;
   const accessToken = getAccessToken();
   if (!accessToken) {
@@ -30,14 +72,12 @@ export async function sendMessage(
   }
 
   try {
-    response = await fetch(`${API_URL}/api/conversation/message`, {
-      method: "POST",
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...init.headers,
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify(request),
-      signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -59,5 +99,6 @@ export async function sendMessage(
     );
   }
 
-  return (await response.json()) as ConversationResponse;
+  if (response.status === 204) return undefined as T;
+  return (await response.json()) as T;
 }
