@@ -66,9 +66,9 @@ class MessageRole(str, enum.Enum):
 
 
 class DocumentStatus(str, enum.Enum):
-    PENDING = "pending"
+    UPLOADED = "uploaded"
     PROCESSING = "processing"
-    READY = "ready"
+    INDEXED = "indexed"
     FAILED = "failed"
 
 
@@ -169,7 +169,7 @@ class Document(TimestampMixin, Base):
     __tablename__ = "documents"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('pending', 'processing', 'ready', 'failed')",
+            "status IN ('uploaded', 'processing', 'indexed', 'failed')",
             name="valid_status",
         ),
         Index("ix_documents_user_created", "user_id", "created_at"),
@@ -190,7 +190,7 @@ class Document(TimestampMixin, Base):
     )
     checksum: Mapped[str | None] = mapped_column(String(64), index=True)
     status: Mapped[str] = mapped_column(
-        String(20), default=DocumentStatus.PENDING.value, nullable=False
+        String(20), default=DocumentStatus.UPLOADED.value, nullable=False
     )
 
     user: Mapped[User | None] = relationship(back_populates="documents")

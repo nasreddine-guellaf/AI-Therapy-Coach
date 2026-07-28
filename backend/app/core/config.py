@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
@@ -21,6 +22,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, gt=0, le=10_080)
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None
+    knowledge_base_dir: Path = Path("backend/data/knowledge_base")
+    rag_collection_name: str = "therapy_knowledge_chunks"
+    rag_top_k: int = Field(default=4, gt=0, le=20)
+    embedding_provider: Literal["local"] = "local"
+    embedding_model: str = "intfloat/multilingual-e5-small"
     llm_provider: Literal["openai", "openrouter"] = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-luna"

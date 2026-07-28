@@ -3,8 +3,9 @@
 FastAPI backend for a non-medical conversational coaching prototype. The text
 conversation flow uses a provider-neutral `LLMProvider`; the infrastructure
 adapters support OpenAI Responses and OpenRouter Chat Completions. Only the
-provider selected by `LLM_PROVIDER` is used. Qdrant, voice, and avatar
-integrations remain disabled placeholders.
+provider selected by `LLM_PROVIDER` is used. RAG uses three fixed, trusted PDFs
+maintained by the project owner; users cannot upload documents. Voice and
+avatar remain disabled placeholders.
 
 ## Requirements
 
@@ -171,6 +172,52 @@ The OpenRouter adapter uses the OpenAI-compatible Chat Completions endpoint via
 - <https://openrouter.ai/docs/quickstart>
 - <https://openrouter.ai/docs/guides/community/openai-sdk>
 
+## Fixed knowledge-base RAG
+
+Place exactly three trusted, text-based PDFs in:
+
+```text
+backend/data/knowledge_base/
+```
+
+PDFs in this directory are ignored by Git. Do not commit real files unless
+their license permits redistribution. OCR and scanned-only PDFs are not
+supported.
+
+Start Qdrant from the repository root and run the administrative ingestion:
+
+```powershell
+docker compose up -d qdrant
+cd backend
+python -m app.scripts.ingest_knowledge_base
+```
+
+Use these settings when the backend runs directly on the host:
+
+```env
+KNOWLEDGE_BASE_DIR=backend/data/knowledge_base
+RAG_COLLECTION_NAME=therapy_knowledge_chunks
+RAG_TOP_K=4
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+```
+
+The script warns if the directory does not contain exactly three PDFs and fails
+if the directory is missing, contains no PDFs, or a PDF has no extractable
+text. It creates the global `therapy_knowledge_chunks` collection and replaces
+each document's existing points using stable IDs, so rerunning it does not
+duplicate chunks.
+
+The local model is downloaded on the first ingestion or RAG query. It produces
+384-dimensional normalized embeddings and may take several minutes on first
+use. Docker Compose preserves the Hugging Face cache in a named volume.
+
+There is no public document-upload API. Authentication still protects coaching
+conversations and their PostgreSQL history, but retrieval reads the same trusted
+knowledge collection for every authenticated user.
+
 ## Test the conversation endpoint
 
 With the backend running:
@@ -219,7 +266,7 @@ FastAPI route
   → SafetyService
   → ConversationSessionRepository / MessageRepository
   → PostgreSQL adapters (store user turn, load up to 8 prior turns)
-  → empty RAG adapter
+  → global fixed-knowledge E5/Qdrant retriever
   → PromptBuilder
   → LLMProvider
   → OpenAILLMProvider (Responses API), or
@@ -244,7 +291,8 @@ session.
 python -m pytest -q
 ```
 
-Unit tests inject fake LLM clients and make no real OpenAI or OpenRouter request.
+Unit tests inject fake LLM, embedding, and Qdrant adapters and make no real
+OpenAI or OpenRouter request.
 
 ## Production TODOs
 

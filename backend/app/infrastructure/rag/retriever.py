@@ -1,8 +1,17 @@
 """Provider-neutral retrieval orchestration adapter."""
 
-from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
+import logging
+
+from app.domain.interfaces.embedding_provider import EmbeddingProvider
+from app.domain.interfaces.retriever import (
+    ChunkRetriever,
+    RetrievedChunk,
+    RetrievalUnavailableError,
+)
 from app.domain.interfaces.vector_store import VectorStore
-from app.infrastructure.rag.embeddings import EmbeddingProvider
+
+
+logger = logging.getLogger(__name__)
 
 
 class Retriever(ChunkRetriever):
@@ -24,8 +33,12 @@ class Retriever(ChunkRetriever):
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")
 
-        query_vector = await self.embedding_provider.embed_query(normalized_query)
-        results = await self.vector_store.search(query_vector, limit=top_k)
+        try:
+            query_vector = await self.embedding_provider.embed_query(normalized_query)
+            results = await self.vector_store.search(query_vector, limit=top_k)
+        except Exception as error:
+            logger.warning("RAG retrieval failed: error_type=%s", type(error).__name__)
+            raise RetrievalUnavailableError from error
 
         chunks: list[RetrievedChunk] = []
         for result in results:

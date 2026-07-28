@@ -22,6 +22,10 @@ class VectorStore(ABC):
     ) -> None: ...
 
     @abstractmethod
+    async def delete_document(self, document_id: str) -> None:
+        """Delete all existing chunks for one stable knowledge document."""
+
+    @abstractmethod
     async def search(
         self, vector: Sequence[float], limit: int = 5
     ) -> list[VectorSearchResult]: ...

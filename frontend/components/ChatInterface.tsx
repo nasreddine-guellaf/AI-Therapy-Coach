@@ -23,12 +23,14 @@ const MAX_MESSAGE_LENGTH = 5_000;
 function createMessage(
   role: ConversationMessage["role"],
   content: string,
+  sources: ConversationMessage["sources"] = undefined,
 ): ConversationMessage {
   return {
     id: crypto.randomUUID(),
     role,
     content,
     createdAt: new Date().toISOString(),
+    sources,
   };
 }
 
@@ -93,7 +95,7 @@ export function ChatInterface() {
       }
       setMessages((current) => [
         ...current,
-        createMessage("assistant", response.message),
+        createMessage("assistant", response.message, response.sources),
       ]);
     } catch (requestError) {
       const messageText =
@@ -134,6 +136,9 @@ export function ChatInterface() {
           role: message.role,
           content: message.content,
           createdAt: message.created_at,
+          sources: Array.isArray(message.metadata?.sources)
+            ? message.metadata.sources.filter(isRAGSource)
+            : undefined,
         })),
       );
       setError(null);
@@ -298,5 +303,15 @@ export function ChatInterface() {
       </form>
       </section>
     </div>
+  );
+}
+
+function isRAGSource(value: unknown): value is NonNullable<ConversationMessage["sources"]>[number] {
+  if (!value || typeof value !== "object") return false;
+  const source = value as Record<string, unknown>;
+  return (
+    typeof source.source_id === "string" &&
+    typeof source.filename === "string" &&
+    typeof source.score === "number"
   );
 }

@@ -26,6 +26,9 @@ class StubVectorStore(VectorStore):
     ) -> None:
         return None
 
+    async def delete_document(self, document_id: str) -> None:
+        return None
+
     async def search(
         self, vector: Sequence[float], limit: int = 5
     ) -> list[VectorSearchResult]:
@@ -34,7 +37,13 @@ class StubVectorStore(VectorStore):
             VectorSearchResult(
                 id="chunk-1",
                 score=0.94,
-                payload={"text": "Grounded coaching context", "page_number": 2},
+                payload={
+                    "text": "Grounded coaching context",
+                    "source_id": "source-1",
+                    "filename": "guide.pdf",
+                    "page_number": 2,
+                    "chunk_index": 4,
+                },
             )
         ]
 
@@ -47,14 +56,20 @@ def test_retrieve_relevant_chunks_uses_injected_ports() -> None:
 
     assert store.last_limit == 3
     assert chunks[0].text == "Grounded coaching context"
-    assert chunks[0].metadata == {"page_number": 2}
+    assert chunks[0].source_id == "source-1"
+    assert chunks[0].filename == "guide.pdf"
 
 
 def test_retriever_rejects_empty_query() -> None:
     retriever = Retriever(StubEmbeddingProvider(), StubVectorStore())
 
     try:
-        asyncio.run(retriever.retrieve_relevant_chunks("   ", top_k=3))
+        asyncio.run(
+            retriever.retrieve_relevant_chunks(
+                "   ",
+                top_k=3,
+            )
+        )
     except ValueError as error:
         assert "query cannot be empty" in str(error)
     else:

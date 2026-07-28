@@ -1,7 +1,7 @@
 # PostgreSQL database schema
 
 PostgreSQL is the relational source of truth for user ownership, coaching
-sessions, messages, document metadata, and explicit conversational memory.
+sessions, messages, legacy document metadata, and explicit conversational memory.
 Qdrant remains responsible only for vector chunks and minimal retrieval
 metadata. File binaries are not stored in PostgreSQL.
 
@@ -69,8 +69,9 @@ access controls, retention rules, and encryption in production.
 
 ### `documents`
 
-Purpose: ingestion metadata for RAG documents. The actual PDF belongs in object
-storage; chunks and embeddings belong in Qdrant.
+Purpose: reserved legacy metadata from the earlier upload-oriented design.
+The fixed knowledge-base ingestion script does not write this table; its source
+files live under `backend/data/knowledge_base` and its chunks live in Qdrant.
 
 | Field | Type | Rules | Purpose |
 | --- | --- | --- | --- |
@@ -80,12 +81,13 @@ storage; chunks and embeddings belong in Qdrant.
 | `storage_key` | TEXT | Optional, unique | Object-storage reference |
 | `content_type` | VARCHAR(100) | Defaults to `application/pdf` | Validated media type |
 | `checksum` | VARCHAR(64) | Optional, indexed | Deduplication/integrity aid |
-| `status` | VARCHAR(20) | `pending`, `processing`, `ready`, or `failed` | Ingestion state |
+| `status` | VARCHAR(20) | `uploaded`, `processing`, `indexed`, or `failed` | Ingestion state |
 | `created_at` | TIMESTAMPTZ | Required | Creation audit time |
 | `updated_at` | TIMESTAMPTZ | Required | Last state change |
 
-Deleting a user sets `user_id` to null rather than deleting shared or curated
-knowledge. `(user_id, created_at)` supports owner-scoped document listings.
+Deleting a user sets `user_id` to null. `(user_id, created_at)` remains available
+if user-specific documents are introduced in a future, separately authorized
+feature. No public document upload exists in the current product.
 
 ### `memory_entries`
 
@@ -144,7 +146,8 @@ users 1 ─── * coaching_sessions 1 ─── * messages
   compatibility DDL.
 
 The initial baseline is `20260721_0001`; `20260721_0002` adds the history-listing
-index. Fresh databases run `python -m alembic upgrade head`. Databases created by
+index and `20260728_0003` introduces the RAG ingestion statuses. Fresh databases
+run `python -m alembic upgrade head`. Databases created by
 the earlier MVP must be backed up, verified, stamped at `20260721_0001`, and then
 upgraded to head.
 

@@ -11,7 +11,11 @@ from app.domain.interfaces.conversation_repository import (
     MessageRepository,
 )
 from app.domain.interfaces.llm_provider import LLMProvider, LLMProviderError
-from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
+from app.domain.interfaces.retriever import (
+    ChunkRetriever,
+    RetrievedChunk,
+    RetrievalUnavailableError,
+)
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.safety_service import SafetyService
@@ -36,6 +40,16 @@ class ConversationResult:
     memory_items_used: int = 0
     rag_chunks_used: int = 0
     source_ids: list[str] = field(default_factory=list)
+    sources: list["ConversationSource"] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationSource:
+    source_id: str
+    filename: str
+    page_number: int | None
+    chunk_index: int | None
+    score: float
 
 
 class ConversationManager:
@@ -111,13 +125,27 @@ class ConversationManager:
         memory = [
             f"{message.role.value}: {message.content}" for message in recent_messages
         ]
-        chunks = await self.retriever.retrieve_relevant_chunks(
-            user_message, top_k=self.retrieval_top_k
-        )
+        try:
+            chunks = await self.retriever.retrieve_relevant_chunks(
+                user_message,
+                top_k=self.retrieval_top_k,
+            )
+        except RetrievalUnavailableError:
+            chunks = []
+        sources = self._sources(chunks)
         prompt = self.prompt_builder.build(
             user_message=user_message,
             memory_context=memory,
-            retrieved_context=[chunk.text for chunk in chunks],
+            retrieved_context=[
+                {
+                    "source_id": chunk.source_id,
+                    "filename": chunk.filename,
+                    "page_number": chunk.page_number,
+                    "chunk_index": chunk.chunk_index,
+                    "text": chunk.text,
+                }
+                for chunk in chunks
+            ],
         )
         try:
             generated_response = await self.llm_provider.generate(prompt)
@@ -128,7 +156,8 @@ class ConversationManager:
                 session_id=session.id,
                 memory_items_used=len(memory),
                 rag_chunks_used=len(chunks),
-                source_ids=[chunk.id for chunk in chunks],
+                source_ids=[source.source_id for source in sources],
+                sources=sources,
             )
 
         if not self.response_validator.validate(
@@ -137,7 +166,7 @@ class ConversationManager:
                 safety_assessment.professional_help_recommended
             ),
         ):
-            return self._validation_failure(session.id, memory, chunks)
+            return self._validation_failure(session.id, memory, chunks, sources)
 
         assistant_response = generated_response.strip()
         try:
@@ -145,6 +174,20 @@ class ConversationManager:
                 session.id,
                 MessageRole.ASSISTANT,
                 assistant_response,
+                metadata={
+                    "sources": [
+                        {
+                            "source_id": source.source_id,
+                            "filename": source.filename,
+                            "page_number": source.page_number,
+                            "chunk_index": source.chunk_index,
+                            "score": source.score,
+                        }
+                        for source in sources
+                    ]
+                }
+                if sources
+                else None,
             )
         except ConversationRepositoryError as error:
             raise ConversationPersistenceUnavailableError from error
@@ -155,7 +198,8 @@ class ConversationManager:
             session_id=session.id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
-            source_ids=[chunk.id for chunk in chunks],
+            source_ids=[source.source_id for source in sources],
+            sources=sources,
         )
 
     @staticmethod
@@ -163,6 +207,7 @@ class ConversationManager:
         session_id: UUID,
         memory: list[str],
         chunks: list[RetrievedChunk],
+        sources: list[ConversationSource],
     ) -> ConversationResult:
         """Return a safe failure without leaking a rejected model response."""
         return ConversationResult(
@@ -174,8 +219,22 @@ class ConversationManager:
             session_id=session_id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
-            source_ids=[chunk.id for chunk in chunks],
+            source_ids=[source.source_id for source in sources],
+            sources=sources,
         )
+
+    @staticmethod
+    def _sources(chunks: list[RetrievedChunk]) -> list[ConversationSource]:
+        return [
+            ConversationSource(
+                source_id=chunk.source_id,
+                filename=chunk.filename,
+                page_number=chunk.page_number,
+                chunk_index=chunk.chunk_index,
+                score=chunk.score,
+            )
+            for chunk in chunks
+        ]
 
     async def _resolve_session(
         self, command: ConversationCommand, message: str

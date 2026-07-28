@@ -9,7 +9,6 @@ from app.api.routes import (
     auth_routes,
     conversation_history_routes,
     conversation_routes,
-    document_routes,
     health_routes,
     voice_routes,
 )
@@ -48,7 +47,6 @@ def create_app() -> FastAPI:
         auth_routes.router,
         conversation_history_routes.router,
         conversation_routes.router,
-        document_routes.router,
         voice_routes.router,
     )
     for router in routers:

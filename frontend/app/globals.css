@@ -617,6 +617,41 @@ a:focus-visible {
   scroll-behavior: smooth;
 }
 
+.message-sources {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(40, 123, 104, 0.15);
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+
+.message-sources > strong {
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.message-sources ul {
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+  list-style: none;
+}
+
+.message-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.message-sources code {
+  width: 100%;
+  color: var(--ink-soft);
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
 .empty-state {
   min-height: 330px;
   display: flex;

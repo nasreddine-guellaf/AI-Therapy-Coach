@@ -1,7 +1,7 @@
 """Prompt construction rules for the conversation use case."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from app.domain.interfaces.llm_provider import LLMPrompt
 
@@ -54,7 +54,7 @@ CONTEXT HANDLING
         self,
         user_message: str,
         memory_context: Sequence[str],
-        retrieved_context: Sequence[str] = (),
+        retrieved_context: Sequence[str | Mapping[str, object]] = (),
     ) -> LLMPrompt:
         """Separate stable instructions from dynamic, JSON-encoded context."""
         history = list(memory_context)

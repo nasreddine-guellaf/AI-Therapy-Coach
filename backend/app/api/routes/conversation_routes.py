@@ -13,7 +13,11 @@ from app.domain.services.conversation_manager import (
     ConversationPersistenceUnavailableError,
     ConversationSessionAccessError,
 )
-from app.schemas.conversation_schema import ConversationRequest, ConversationResponse
+from app.schemas.conversation_schema import (
+    ConversationRequest,
+    ConversationResponse,
+    RAGSourceResponse,
+)
 
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
@@ -56,4 +60,14 @@ async def send_message(
         memory_items_used=result.memory_items_used,
         rag_chunks_used=result.rag_chunks_used,
         source_ids=result.source_ids,
+        sources=[
+            RAGSourceResponse(
+                source_id=source.source_id,
+                filename=source.filename,
+                page_number=source.page_number,
+                chunk_index=source.chunk_index,
+                score=source.score,
+            )
+            for source in result.sources
+        ],
     )

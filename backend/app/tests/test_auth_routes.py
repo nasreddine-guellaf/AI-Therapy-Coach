@@ -52,6 +52,7 @@ class FakeConversationManager:
             memory_items_used=0,
             rag_chunks_used=0,
             source_ids=[],
+            sources=[],
         )
 
 

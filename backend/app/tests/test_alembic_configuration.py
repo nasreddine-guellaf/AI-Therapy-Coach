@@ -34,3 +34,15 @@ def test_history_index_migration_follows_baseline() -> None:
     ).read_text(encoding="utf-8")
     assert 'down_revision: str | None = "20260721_0001"' in migration
     assert "ix_coaching_sessions_user_updated" in migration
+
+
+def test_rag_status_migration_follows_history_revision() -> None:
+    migration = (
+        BACKEND_ROOT
+        / "alembic"
+        / "versions"
+        / "20260728_0003_rag_document_statuses.py"
+    ).read_text(encoding="utf-8")
+    assert 'down_revision: str | None = "20260721_0002"' in migration
+    assert "uploaded" in migration
+    assert "indexed" in migration

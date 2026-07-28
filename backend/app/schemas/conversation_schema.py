@@ -7,6 +7,14 @@ class ConversationRequest(BaseModel):
     session_id: UUID | None = None
 
 
+class RAGSourceResponse(BaseModel):
+    source_id: str
+    filename: str
+    page_number: int | None = None
+    chunk_index: int | None = None
+    score: float
+
+
 class ConversationResponse(BaseModel):
     message: str
     status: str
@@ -14,3 +22,4 @@ class ConversationResponse(BaseModel):
     memory_items_used: int = 0
     rag_chunks_used: int = 0
     source_ids: list[str] = Field(default_factory=list)
+    sources: list[RAGSourceResponse] = Field(default_factory=list)

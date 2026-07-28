@@ -5,7 +5,8 @@ from functools import lru_cache
 
 from app.core.config import settings
 from app.domain.interfaces.llm_provider import LLMProvider
-from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
+from app.domain.interfaces.embedding_provider import EmbeddingProvider
+from app.domain.interfaces.retriever import ChunkRetriever
 from app.domain.services.conversation_manager import ConversationManager
 from app.domain.services.conversation_history_service import ConversationHistoryService
 from app.domain.services.prompt_builder import PromptBuilder
@@ -17,18 +18,12 @@ from app.infrastructure.database.conversation_repositories import (
     PostgreSQLConversationSessionRepository,
     PostgreSQLMessageRepository,
 )
+from app.infrastructure.rag.embeddings import LocalE5EmbeddingProvider
+from app.infrastructure.rag.retriever import Retriever
+from app.infrastructure.vector_db.qdrant_client import QdrantVectorStore
 
 
 logger = logging.getLogger(__name__)
-
-
-class _EmptyRetriever(ChunkRetriever):
-    """No-network adapter used until vector retrieval is configured."""
-
-    async def retrieve_relevant_chunks(
-        self, query: str, top_k: int = 5
-    ) -> list[RetrievedChunk]:
-        return []
 
 
 def build_llm_provider() -> LLMProvider:
@@ -71,12 +66,28 @@ def get_conversation_manager() -> ConversationManager:
     return ConversationManager(
         session_repository=PostgreSQLConversationSessionRepository(),
         message_repository=PostgreSQLMessageRepository(),
-        retriever=_EmptyRetriever(),
+        retriever=get_chunk_retriever(),
         prompt_builder=PromptBuilder(),
         llm_provider=build_llm_provider(),
         response_validator=ResponseValidator(),
         safety_service=SafetyService(),
+        retrieval_top_k=settings.rag_top_k,
     )
+
+
+@lru_cache
+def get_embedding_provider() -> EmbeddingProvider:
+    return LocalE5EmbeddingProvider(settings.embedding_model)
+
+
+@lru_cache
+def get_vector_store() -> QdrantVectorStore:
+    return QdrantVectorStore()
+
+
+@lru_cache
+def get_chunk_retriever() -> ChunkRetriever:
+    return Retriever(get_embedding_provider(), get_vector_store())
 
 
 @lru_cache

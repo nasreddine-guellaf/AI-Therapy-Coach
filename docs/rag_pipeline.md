@@ -1,113 +1,112 @@
-# Retrieval-Augmented Generation pipeline
+# Fixed knowledge-base RAG pipeline
 
-This first version defines the local RAG structure without connecting to OpenAI
-or Qdrant. Every external capability is injected behind an interface so the
-pipeline can be tested with deterministic local doubles.
-
-## Target flow
+The assistant uses exactly three trusted PDFs selected by the project owner.
+Users cannot upload documents. The owner or an authorized administrator indexes
+the files locally before the application is used.
 
 ```text
-PDF bytes
-   ↓
-PDFLoader → LoadedPage[]
-   ↓
-TextChunker → TextChunk[]
-   ↓
-EmbeddingProvider.embed_documents(...)
-   ↓
-VectorStore.upsert(...) → future Qdrant adapter
+3 trusted PDFs in backend/data/knowledge_base
+  -> admin ingestion script
+  -> page-level text extraction
+  -> page-aware chunking
+  -> multilingual E5-small embeddings
+  -> global Qdrant collection: therapy_knowledge_chunks
 
-User query
-   ↓
-EmbeddingProvider.embed_query(...)
-   ↓
-VectorStore.search(...)
-   ↓
-Retriever.retrieve_relevant_chunks(query, top_k)
-   ↓
-Prompt Builder → LLM → validation and safety guardrails
+Authenticated conversation
+  -> query embedding
+  -> global cosine retrieval (top 4 by default)
+  -> structured chunks in PromptBuilder
+  -> LLM answer with source metadata
 ```
 
-## Components
+## Prepare and ingest the knowledge base
 
-### PDF loading
+Place exactly three `.pdf` files in `backend/data/knowledge_base/`. Only PDFs
+with a selectable text layer are supported. Scanned or image-only files fail
+with:
 
-`PDFLoader` is an abstract contract that converts PDF bytes into ordered
-`LoadedPage` values. Each page contains extracted text, its one-based page
-number, and source metadata. `PlaceholderPDFLoader` currently validates empty
-payloads and the PDF signature, then stops explicitly because no parser has been
-selected.
+```text
+No extractable text found. OCR is not supported yet.
+```
 
-A production loader must add:
+PDF binaries are ignored by Git. Commit them only when their licenses allow
+redistribution.
 
-- file-size and page-count limits;
-- MIME and PDF-signature validation;
-- malware scanning and sandboxed parsing;
-- encrypted/corrupt PDF handling;
-- OCR fallback and extraction-quality metrics;
-- source checksum and document identifier metadata.
+Start Qdrant from the repository root, then run the script from `backend`:
 
-### Chunking
+```powershell
+docker compose up -d qdrant
+cd backend
+python -m app.scripts.ingest_knowledge_base
+```
 
-`TextChunker` implements deterministic character-based chunks with configurable
-size and overlap. Pages are chunked independently so a citation never crosses a
-page boundary. Every `TextChunk` retains:
+The script fails when the directory is missing or contains no PDFs and warns
+when the number of PDFs is not exactly three.
 
-- page number;
-- global chunk index;
-- start/end character offsets;
-- inherited document metadata.
+## Idempotency and metadata
 
-The default is 1,000 characters with 150 characters of overlap. Once an
-embedding model is selected, tokenizer-aware and semantic splitting should be
-evaluated instead of assuming characters map consistently to tokens.
+Document IDs are deterministic from normalized filenames. Point/source IDs are
+deterministic from filename, page number, and chunk index. Before upserting one
+document, the adapter removes its previous points, preventing duplicate or
+stale chunks when the script is run again.
 
-### Embeddings
+Each Qdrant payload contains:
 
-`EmbeddingProvider` defines separate asynchronous methods for documents and
-queries. No provider SDK is imported. `DeterministicMockEmbeddingProvider`
-produces stable, non-semantic vectors for unit tests only; it must never be used
-for production relevance decisions.
+- `document_id`
+- `filename`
+- `source_id`
+- `page_number`
+- `chunk_index`
+- `text`
+- `created_at`
 
-The future OpenAI adapter should implement batching, rate-limit handling,
-timeouts, retry/backoff, dimension checks, model/version metadata, cost metrics,
-and secret redaction.
+There is no `user_id` payload or tenant filter. The collection is a shared,
+owner-curated knowledge base.
 
-### Vector storage
+## Extraction, chunking, and embeddings
 
-The domain-level `VectorStore` port exposes provider-neutral `upsert` and
-`search` methods. `QdrantVectorStore` stores configuration but intentionally
-raises `NotImplementedError` before any network call. Its future implementation
-will use the async Qdrant client and must add:
+`PyPDFTextLoader` uses `pypdf` and retains one-based page numbers.
+`TextChunker` keeps chunks within a page and defaults to 1,000 characters with
+150 characters of overlap.
 
-- idempotent collection setup and dimension validation;
-- payload indexes and authorization/tenant filters;
-- document deletion propagation;
-- request timeouts, retry policy, and telemetry;
-- safeguards preventing sensitive message history from becoming payload data.
+`LocalE5EmbeddingProvider` lazily loads
+`intfloat/multilingual-e5-small`, applies `passage:` and `query:` prefixes,
+normalizes vectors, and enforces 384 dimensions. The first run downloads the
+model weights.
 
-No API keys are stored in code. `QDRANT_URL` and `QDRANT_API_KEY` remain
-environment settings.
+## Retrieval and prompt grounding
 
-### Retrieval
+Every ordinary conversation turn queries `therapy_knowledge_chunks`.
+`RAG_TOP_K` defaults to four. Retrieved chunks and their explicit metadata are
+injected into the existing `RETRIEVED RAG CONTEXT` prompt section.
 
-`Retriever.retrieve_relevant_chunks(query, top_k)` validates the request,
-embeds the query through `EmbeddingProvider`, searches through `VectorStore`,
-and maps provider results into `RetrievedChunk` values. Payloads without usable
-text are ignored.
+The prompt requires the model to use retrieved context as the primary source
+for document-grounded claims, never invent missing content or citations, and
+state when the evidence is insufficient. General coaching guidance remains
+available when appropriate. If Qdrant is unavailable or returns no chunks, the
+conversation continues safely with an empty RAG context.
 
-Future work includes score thresholds, user/document authorization filters,
-deduplication, hybrid search, reranking, citation validation, and retrieval
-quality evaluation. Retrieved content must still pass prompt-boundary and safety
-controls; RAG evidence is not automatically trustworthy or medically valid.
+Sources are returned in the API response and persisted in assistant-message
+metadata so they remain visible when a conversation is reopened.
+
+## Configuration
+
+```env
+KNOWLEDGE_BASE_DIR=backend/data/knowledge_base
+RAG_COLLECTION_NAME=therapy_knowledge_chunks
+RAG_TOP_K=4
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=
+```
 
 ## Current limitations
 
-- No real PDF parser is configured.
-- No OpenAI embedding request is made.
-- No Qdrant request is made.
-- Ingestion orchestration and persistence status updates are not implemented.
-- No prompt builder or LLM is invoked by this pipeline version.
-
-These limitations are deliberate: this version establishes clean contracts and
-testable local behavior before external integrations are enabled.
+- exactly one owner-managed knowledge base and embedding model;
+- no OCR, scanned-PDF processing, malware scanning, or licensing checks;
+- no background ingestion queue or admin dashboard;
+- no reranking, score threshold, or automated citation verification;
+- reindexing is per document rather than an atomic collection-wide release;
+- filename changes create a new document identity, so administrators should
+  remove obsolete points or recreate the collection when renaming sources.

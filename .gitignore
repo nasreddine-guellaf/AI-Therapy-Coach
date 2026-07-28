@@ -12,3 +12,4 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+backend/data/knowledge_base/*.pdf

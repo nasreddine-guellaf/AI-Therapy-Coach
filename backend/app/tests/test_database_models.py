@@ -47,3 +47,14 @@ def test_conversation_tables_support_titles_and_optional_metadata() -> None:
     messages = {column.name for column in Base.metadata.tables["messages"].columns}
     assert {"id", "user_id", "title", "created_at", "updated_at"} <= sessions
     assert {"id", "session_id", "role", "content", "metadata", "created_at"} <= messages
+
+
+def test_document_model_supports_rag_ingestion_metadata() -> None:
+    columns = {column.name for column in Base.metadata.tables["documents"].columns}
+    assert {"user_id", "filename", "content_type", "checksum", "status"} <= columns
+    constraints = {
+        str(constraint.sqltext)
+        for constraint in Base.metadata.tables["documents"].constraints
+        if hasattr(constraint, "sqltext")
+    }
+    assert any("uploaded" in expression and "indexed" in expression for expression in constraints)

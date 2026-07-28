@@ -71,7 +71,8 @@ HTTP `202 Accepted`:
   "session_id": "10000000-0000-0000-0000-000000000001",
   "memory_items_used": 4,
   "rag_chunks_used": 0,
-  "source_ids": []
+  "source_ids": [],
+  "sources": []
 }
 ```
 
@@ -95,9 +96,18 @@ When the selected provider key is absent, the endpoint returns a safe
 returns API keys, provider exception details, JWT signing secrets, password
 hashes, or rejected model text.
 
-`memory_items_used` counts prior turns supplied to the prompt. The RAG retriever
-remains empty; `rag_chunks_used` and `source_ids` stay in the stable response for
-future integration.
+`memory_items_used` counts prior turns supplied to the prompt. Every ordinary
+turn retrieves up to `RAG_TOP_K` chunks from the global, fixed internal
+knowledge base. When chunks are available, `sources` contains `source_id`,
+`filename`, `page_number`, `chunk_index`, and similarity `score`.
+
+The knowledge base consists of three trusted PDFs selected by the project
+owner. Users do not upload PDFs and no document-upload endpoint is part of the
+public API. An administrator indexes the files with:
+
+```powershell
+python -m app.scripts.ingest_knowledge_base
+```
 
 ## `GET /api/conversations`
 
@@ -149,16 +159,6 @@ Permanently deletes an owned session and its messages through the database
 cascade, returning HTTP `204 No Content`. This MVP uses hard deletion; advanced
 retention and recovery policies remain production work. Missing and foreign
 sessions return HTTP `404`.
-
-## `POST /api/documents/upload`
-
-Multipart request with a `file` field. Current response:
-
-```json
-{ "filename": "document.pdf", "status": "pending" }
-```
-
-Validation and asynchronous ingestion remain to be implemented.
 
 ## `POST /api/voice/transcribe`
 

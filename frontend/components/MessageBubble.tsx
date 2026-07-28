@@ -25,6 +25,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <time dateTime={message.createdAt}>{time}</time>
         </div>
         <p>{message.content}</p>
+        {!isUser && message.sources && message.sources.length > 0 ? (
+          <div className="message-sources" aria-label="Response sources">
+            <strong>Sources</strong>
+            <ul>
+              {message.sources.map((source) => (
+                <li key={source.source_id}>
+                  <span>{source.filename}</span>
+                  {source.page_number ? ` · page ${source.page_number}` : ""}
+                  <code>{source.source_id}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </article>
   );

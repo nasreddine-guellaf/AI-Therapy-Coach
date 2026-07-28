@@ -93,10 +93,14 @@ async function authenticatedRequest<T>(
       logout();
       window.location.assign("/login");
     }
-    throw new ApiError(
-      "The conversation service could not process your message.",
-      response.status,
-    );
+    let detail = "The service could not process the request.";
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      if (typeof payload.detail === "string") detail = payload.detail;
+    } catch {
+      // Keep the stable fallback and never expose non-JSON server output.
+    }
+    throw new ApiError(detail, response.status);
   }
 
   if (response.status === 204) return undefined as T;

@@ -135,6 +135,7 @@ def build_manager(
     sessions: FakeSessionRepository | None = None,
     messages: FakeMessageRepository | None = None,
     llm: LLMProvider | None = None,
+    retriever: ChunkRetriever | None = None,
 ) -> tuple[ConversationManager, FakeSessionRepository, FakeMessageRepository, LLMProvider]:
     session_repository = sessions or FakeSessionRepository()
     message_repository = messages or FakeMessageRepository()
@@ -143,7 +144,7 @@ def build_manager(
         ConversationManager(
             session_repository=session_repository,
             message_repository=message_repository,
-            retriever=EmptyRetriever(),
+            retriever=retriever or EmptyRetriever(),
             prompt_builder=PromptBuilder(),
             llm_provider=provider,
             response_validator=ResponseValidator(),
@@ -250,3 +251,48 @@ def test_llm_unavailable_keeps_stored_user_turn_and_returns_session() -> None:
     assert result.status == "llm_unavailable"
     assert result.session_id is not None
     assert [item.role for item in messages.messages] == [MessageRole.USER]
+
+
+def test_rag_context_and_sources_are_returned_and_persisted() -> None:
+    class GroundedRetriever(ChunkRetriever):
+        async def retrieve_relevant_chunks(
+            self, query: str, top_k: int = 5
+        ) -> list[RetrievedChunk]:
+            return [
+                RetrievedChunk(
+                    id="point-1",
+                    text="The guide recommends one small achievable step.",
+                    score=0.91,
+                    metadata={
+                        "source_id": "source-1",
+                        "filename": "guide.pdf",
+                        "page_number": 3,
+                        "chunk_index": 2,
+                    },
+                )
+            ]
+
+    provider = StubLLMProvider()
+    manager, _, messages, _ = build_manager(
+        llm=provider, retriever=GroundedRetriever()
+    )
+    result = asyncio.run(
+        manager.handle(ConversationCommand(message="What does my guide say?", user_id=USER_ID))
+    )
+
+    assert provider.prompt is not None
+    assert "The guide recommends one small achievable step." in provider.prompt.input
+    assert result.source_ids == ["source-1"]
+    assert result.sources[0].filename == "guide.pdf"
+    assert result.rag_chunks_used == 1
+    assert messages.messages[-1].metadata == {
+        "sources": [
+            {
+                "source_id": "source-1",
+                "filename": "guide.pdf",
+                "page_number": 3,
+                "chunk_index": 2,
+                "score": 0.91,
+            }
+        ]
+    }

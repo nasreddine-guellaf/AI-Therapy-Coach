@@ -50,6 +50,11 @@ the panel or use **New conversation** to clear the active session and visible
 messages. The frontend never sends a `user_id`; ownership comes only from the
 Bearer token.
 
+Users do not upload documents. The backend always retrieves from three trusted
+PDFs indexed by the project owner through the local administration script.
+When the assistant uses retrieved chunks, sources appear below the response
+with filename, page number, and source ID.
+
 For this local MVP, only the JWT is stored under the versioned `localStorage`
 key `therapy-coach:access-token:v1`. Production should prefer a
 backend-for-frontend session with `HttpOnly`, `Secure`, `SameSite` cookies.

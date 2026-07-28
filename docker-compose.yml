@@ -4,13 +4,17 @@ services:
     env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://therapeutic:therapeutic@postgres:5432/therapeutic_ai
+      QDRANT_URL: http://qdrant:6333
+      KNOWLEDGE_BASE_DIR: /app/data/knowledge_base
     ports: ["8000:8000"]
     depends_on:
       postgres:
         condition: service_healthy
       qdrant:
         condition: service_started
-    volumes: ["./backend:/app"]
+    volumes:
+      - "./backend:/app"
+      - "embedding_cache:/root/.cache/huggingface"
   frontend:
     build: ./frontend
     environment:
@@ -38,3 +42,4 @@ services:
 volumes:
   postgres_data:
   qdrant_data:
+  embedding_cache:
