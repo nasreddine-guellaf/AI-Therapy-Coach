@@ -13,3 +13,6 @@ implemented yet.
 Real PDF files should not be committed to Git unless their license explicitly
 allows redistribution. The repository ignores every PDF in this directory.
 
+The ingestion script generates an ignored `manifest.json` containing checksums,
+indexing timestamps, chunk counts, the embedding model, and collection name.
+It never contains PDF text.

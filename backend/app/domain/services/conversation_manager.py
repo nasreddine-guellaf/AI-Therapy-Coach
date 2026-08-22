@@ -10,7 +10,11 @@ from app.domain.interfaces.conversation_repository import (
     ConversationSessionRepository,
     MessageRepository,
 )
-from app.domain.interfaces.llm_provider import LLMProvider, LLMProviderError
+from app.domain.interfaces.llm_provider import (
+    LLMIncompleteResponseError,
+    LLMProvider,
+    LLMProviderError,
+)
 from app.domain.interfaces.retriever import (
     ChunkRetriever,
     RetrievedChunk,
@@ -149,6 +153,14 @@ class ConversationManager:
         )
         try:
             generated_response = await self.llm_provider.generate(prompt)
+        except LLMIncompleteResponseError as error:
+            return ConversationResult(
+                message=error.user_message,
+                status="llm_incomplete",
+                session_id=session.id,
+                memory_items_used=len(memory),
+                rag_chunks_used=len(chunks),
+            )
         except LLMProviderError as error:
             return ConversationResult(
                 message=error.user_message,
@@ -156,8 +168,6 @@ class ConversationManager:
                 session_id=session.id,
                 memory_items_used=len(memory),
                 rag_chunks_used=len(chunks),
-                source_ids=[source.source_id for source in sources],
-                sources=sources,
             )
 
         if not self.response_validator.validate(
@@ -166,7 +176,7 @@ class ConversationManager:
                 safety_assessment.professional_help_recommended
             ),
         ):
-            return self._validation_failure(session.id, memory, chunks, sources)
+            return self._validation_failure(session.id, memory, chunks)
 
         assistant_response = generated_response.strip()
         try:
@@ -207,7 +217,6 @@ class ConversationManager:
         session_id: UUID,
         memory: list[str],
         chunks: list[RetrievedChunk],
-        sources: list[ConversationSource],
     ) -> ConversationResult:
         """Return a safe failure without leaking a rejected model response."""
         return ConversationResult(
@@ -219,8 +228,6 @@ class ConversationManager:
             session_id=session_id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
-            source_ids=[source.source_id for source in sources],
-            sources=sources,
         )
 
     @staticmethod

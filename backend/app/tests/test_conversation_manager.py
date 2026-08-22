@@ -14,7 +14,12 @@ from app.domain.interfaces.conversation_repository import (
     ConversationSessionRepository,
     MessageRepository,
 )
-from app.domain.interfaces.llm_provider import LLMNotConfiguredError, LLMPrompt, LLMProvider
+from app.domain.interfaces.llm_provider import (
+    LLMIncompleteResponseError,
+    LLMNotConfiguredError,
+    LLMPrompt,
+    LLMProvider,
+)
 from app.domain.interfaces.retriever import ChunkRetriever, RetrievedChunk
 from app.domain.services.conversation_manager import (
     ConversationCommand,
@@ -251,6 +256,66 @@ def test_llm_unavailable_keeps_stored_user_turn_and_returns_session() -> None:
     assert result.status == "llm_unavailable"
     assert result.session_id is not None
     assert [item.role for item in messages.messages] == [MessageRole.USER]
+    assert result.source_ids == []
+    assert result.sources == []
+
+
+def test_incomplete_llm_response_is_not_stored_or_attributed() -> None:
+    class IncompleteProvider(LLMProvider):
+        async def generate(self, prompt: LLMPrompt) -> str:
+            raise LLMIncompleteResponseError
+
+    class GroundedRetriever(ChunkRetriever):
+        async def retrieve_relevant_chunks(
+            self, query: str, top_k: int = 5
+        ) -> list[RetrievedChunk]:
+            return [
+                RetrievedChunk(
+                    id="point-1",
+                    text="Grounding that must not be attributed to a failure.",
+                    score=0.91,
+                    metadata={
+                        "source_id": "source-1",
+                        "filename": "guide.pdf",
+                        "page_number": 3,
+                    },
+                )
+            ]
+
+    manager, _, messages, _ = build_manager(
+        llm=IncompleteProvider(),
+        retriever=GroundedRetriever(),
+    )
+    result = asyncio.run(
+        manager.handle(ConversationCommand(message="I feel tense", user_id=USER_ID))
+    )
+
+    assert result.status == "llm_incomplete"
+    assert result.rag_chunks_used == 1
+    assert [item.role for item in messages.messages] == [MessageRole.USER]
+    assert result.source_ids == []
+    assert result.sources == []
+
+
+def test_unanswerable_retrieval_returns_no_sources_and_marks_context_none() -> None:
+    provider = StubLLMProvider(
+        "The documents do not provide enough information about that."
+    )
+    manager, _, _, _ = build_manager(llm=provider, retriever=EmptyRetriever())
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(
+                message="What is tomorrow's weather?",
+                user_id=USER_ID,
+            )
+        )
+    )
+
+    assert provider.prompt is not None
+    assert "availability=none" in provider.prompt.input
+    assert result.rag_chunks_used == 0
+    assert result.source_ids == []
+    assert result.sources == []
 
 
 def test_rag_context_and_sources_are_returned_and_persisted() -> None:

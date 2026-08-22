@@ -96,10 +96,24 @@ When the selected provider key is absent, the endpoint returns a safe
 returns API keys, provider exception details, JWT signing secrets, password
 hashes, or rejected model text.
 
+Supported provider selections are `openai`, `openrouter`, and `gemini` through
+`LLM_PROVIDER`. Gemini uses its OpenAI-compatible Chat Completions endpoint.
+Provider selection does not change this public response contract. There is no
+automatic fallback between providers in this version.
+
 `memory_items_used` counts prior turns supplied to the prompt. Every ordinary
 turn retrieves up to `RAG_TOP_K` chunks from the global, fixed internal
 knowledge base. When chunks are available, `sources` contains `source_id`,
 `filename`, `page_number`, `chunk_index`, and similarity `score`.
+Candidates below `RAG_MIN_SCORE` are removed and near-duplicate chunks are
+collapsed before prompt construction. If no candidates remain,
+`rag_chunks_used` is `0`, `source_ids` and `sources` are empty, and
+`PromptBuilder` receives `availability=none`.
+
+Sources are returned only when `status` is `completed`. Provider failures,
+validation failures, and Gemini truncation after one retry return empty
+`source_ids` and `sources`. Gemini truncation uses status `llm_incomplete`; its
+partial content is never stored as an assistant message.
 
 The knowledge base consists of three trusted PDFs selected by the project
 owner. Users do not upload PDFs and no document-upload endpoint is part of the
@@ -108,6 +122,28 @@ public API. An administrator indexes the files with:
 ```powershell
 python -m app.scripts.ingest_knowledge_base
 ```
+
+## `GET /api/rag/readiness`
+
+Requires a Bearer token and returns safe operational aggregates:
+
+```json
+{
+  "qdrant_reachable": true,
+  "collection_exists": true,
+  "indexed_document_count": 3,
+  "total_chunk_count": 42,
+  "expected_pdf_count": 3,
+  "embedding_model": "intfloat/multilingual-e5-small",
+  "status": "ready"
+}
+```
+
+`status` is `ready` only when Qdrant is reachable, the collection exists,
+exactly three distinct documents are indexed, and the collection contains at
+least one chunk. The endpoint never returns filenames, chunks, vectors, prompts,
+credentials, or conversation content. Qdrant failures produce a safe
+`not_ready` payload rather than raw infrastructure errors.
 
 ## `GET /api/conversations`
 

@@ -52,8 +52,12 @@ Bearer token.
 
 Users do not upload documents. The backend always retrieves from three trusted
 PDFs indexed by the project owner through the local administration script.
-When the assistant uses retrieved chunks, sources appear below the response
-with filename, page number, and source ID.
+When a completed answer uses retrieved chunks, sources appear below it.
+Repeated chunks from the same PDF page are shown once, and filenames are
+formatted as reader-facing labels such as
+`OMS — Faire ce qui compte en période de stress, p. 132`. Raw `source_id`
+values stay hidden; set `NEXT_PUBLIC_SHOW_SOURCE_IDS=true` only in a local
+developer/debug environment to display them.
 
 For this local MVP, only the JWT is stored under the versioned `localStorage`
 key `therapy-coach:access-token:v1`. Production should prefer a
@@ -65,6 +69,7 @@ currently permits `http://localhost:3000` by default.
 ## Validation
 
 ```powershell
+npm run test:sources
 npm run typecheck
 npm run build
 ```

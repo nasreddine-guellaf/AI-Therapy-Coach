@@ -10,6 +10,7 @@ from app.api.routes import (
     conversation_history_routes,
     conversation_routes,
     health_routes,
+    rag_routes,
     voice_routes,
 )
 from app.core.config import settings
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
         auth_routes.router,
         conversation_history_routes.router,
         conversation_routes.router,
+        rag_routes.router,
         voice_routes.router,
     )
     for router in routers:

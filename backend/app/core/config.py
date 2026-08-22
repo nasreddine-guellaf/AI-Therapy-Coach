@@ -25,9 +25,10 @@ class Settings(BaseSettings):
     knowledge_base_dir: Path = Path("backend/data/knowledge_base")
     rag_collection_name: str = "therapy_knowledge_chunks"
     rag_top_k: int = Field(default=4, gt=0, le=20)
+    rag_min_score: float = Field(default=0.25, ge=-1.0, le=1.0)
     embedding_provider: Literal["local"] = "local"
     embedding_model: str = "intfloat/multilingual-e5-small"
-    llm_provider: Literal["openai", "openrouter"] = "openai"
+    llm_provider: Literal["openai", "openrouter", "gemini"] = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-luna"
     openai_timeout_seconds: float = 30.0
@@ -35,6 +36,12 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "qwen/qwen3-next-80b-a3b-instruct:free"
+    gemini_api_key: str | None = None
+    gemini_base_url: str = (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+    )
+    gemini_model: str = "gemini-3.7-flash"
+    gemini_max_output_tokens: int = Field(default=1200, gt=0, le=32_768)
     elevenlabs_api_key: str | None = None
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),

@@ -37,6 +37,14 @@ class LLMInvalidResponseError(LLMProviderError):
     user_message = "The AI service returned no usable response. Please try again."
 
 
+class LLMIncompleteResponseError(LLMProviderError):
+    """Raised when generation reaches its output limit after one safe retry."""
+
+    user_message = (
+        "The AI response was incomplete. Please try again or ask for a shorter answer."
+    )
+
+
 class LLMProvider(ABC):
     """Provider-neutral port for text generation."""
 

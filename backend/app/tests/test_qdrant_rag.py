@@ -1,4 +1,4 @@
-"""Qdrant tenant filtering and local embedding adapter tests."""
+"""Qdrant fixed-knowledge and local embedding adapter tests."""
 
 import asyncio
 from datetime import datetime, timezone
@@ -6,7 +6,11 @@ from types import SimpleNamespace
 from typing import Sequence
 
 from app.domain.interfaces.knowledge_base import KnowledgeBaseDocument
-from app.domain.interfaces.vector_store import VectorSearchResult, VectorStore
+from app.domain.interfaces.vector_store import (
+    VectorSearchResult,
+    VectorStore,
+    VectorStoreReadiness,
+)
 from app.infrastructure.rag.chunker import TextChunker
 from app.infrastructure.rag.document_indexer import RAGDocumentIndexer
 from app.infrastructure.rag.embeddings import LocalE5EmbeddingProvider
@@ -17,17 +21,27 @@ from app.infrastructure.vector_db.qdrant_client import QdrantVectorStore
 class FakeQdrantClient:
     def __init__(self) -> None:
         self.created = False
+        self.create_count = 0
+        self.exists = False
+        self.collection_delete_count = 0
         self.indexed_field: str | None = None
         self.upserted = []
         self.deleted_filter = None
         self.query_kwargs = None
 
     async def collection_exists(self, collection_name: str) -> bool:
-        return False
+        return self.exists
 
     async def create_collection(self, **kwargs) -> None:
         self.created = True
+        self.create_count += 1
+        self.exists = True
         assert kwargs["vectors_config"].size == 384
+
+    async def delete_collection(self, collection_name: str) -> None:
+        self.collection_delete_count += 1
+        self.exists = False
+        self.upserted = []
 
     async def create_payload_index(self, **kwargs) -> None:
         self.indexed_field = kwargs["field_name"]
@@ -50,6 +64,18 @@ class FakeQdrantClient:
             ]
         )
 
+    async def get_collection(self, collection_name: str):
+        return SimpleNamespace(points_count=len(self.upserted))
+
+    async def scroll(self, **kwargs):
+        return (
+            [
+                SimpleNamespace(payload=dict(point.payload or {}))
+                for point in self.upserted
+            ],
+            None,
+        )
+
 
 def test_qdrant_collection_supports_global_fixed_knowledge() -> None:
     client = FakeQdrantClient()
@@ -67,6 +93,7 @@ def test_qdrant_collection_supports_global_fixed_knowledge() -> None:
     )
     asyncio.run(store.delete_document("doc-1"))
     results = asyncio.run(store.search(vector, limit=3))
+    readiness = asyncio.run(store.inspect_readiness())
 
     assert client.created
     assert client.indexed_field == "document_id"
@@ -74,6 +101,23 @@ def test_qdrant_collection_supports_global_fixed_knowledge() -> None:
     assert client.deleted_filter.must[0].match.value == "doc-1"
     assert "query_filter" not in client.query_kwargs
     assert results[0].payload["text"] == "Grounded text"
+    assert readiness.indexed_document_count == 1
+    assert readiness.total_chunk_count == 1
+
+
+def test_qdrant_recreate_deletes_and_rebuilds_collection() -> None:
+    client = FakeQdrantClient()
+    client.exists = True
+    store = QdrantVectorStore(
+        collection_name="therapy_knowledge_chunks",
+        client=client,
+    )
+
+    asyncio.run(store.recreate_collection())
+
+    assert client.collection_delete_count == 1
+    assert client.create_count == 1
+    assert client.exists
 
 
 class FakeVector(list):
@@ -122,6 +166,12 @@ class FakeVectorStore(VectorStore):
 
     async def delete_document(self, document_id: str) -> None:
         self.deleted_document_id = document_id
+
+    async def recreate_collection(self) -> None:
+        return None
+
+    async def inspect_readiness(self) -> VectorStoreReadiness:
+        return VectorStoreReadiness(True, True, 3, len(self.ids))
 
     async def search(self, vector, limit=5) -> list[VectorSearchResult]:
         return []

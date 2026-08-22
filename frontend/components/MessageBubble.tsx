@@ -1,4 +1,8 @@
 import type { ConversationMessage } from "@/types/conversation";
+import {
+  deduplicateSources,
+  formatSourceLabel,
+} from "@/utils/sourcePresentation";
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -11,6 +15,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(message.createdAt));
+  const sources = deduplicateSources(message.sources ?? []);
+  const showSourceIds = process.env.NEXT_PUBLIC_SHOW_SOURCE_IDS === "true";
 
   return (
     <article className={`message-row message-row--${message.role}`}>
@@ -25,15 +31,14 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <time dateTime={message.createdAt}>{time}</time>
         </div>
         <p>{message.content}</p>
-        {!isUser && message.sources && message.sources.length > 0 ? (
+        {!isUser && sources.length > 0 ? (
           <div className="message-sources" aria-label="Response sources">
             <strong>Sources</strong>
             <ul>
-              {message.sources.map((source) => (
-                <li key={source.source_id}>
-                  <span>{source.filename}</span>
-                  {source.page_number ? ` · page ${source.page_number}` : ""}
-                  <code>{source.source_id}</code>
+              {sources.map((source) => (
+                <li key={`${source.filename}:${source.page_number ?? "none"}`}>
+                  <span>{formatSourceLabel(source)}</span>
+                  {showSourceIds ? <code>{source.source_id}</code> : null}
                 </li>
               ))}
             </ul>

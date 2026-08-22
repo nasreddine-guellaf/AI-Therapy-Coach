@@ -50,6 +50,22 @@ def test_prompt_marks_available_rag_as_primary_grounding_context() -> None:
     assert "do not contain enough information" in prompt.instructions
 
 
+def test_rag_style_is_warm_practical_and_not_a_formal_document_summary() -> None:
+    prompt = PromptBuilder().build(
+        "Comment gérer mon stress ?",
+        [],
+        [{"filename": "guide.pdf", "text": "Revenir au moment présent."}],
+    )
+
+    assert "same language as the CURRENT USER MESSAGE" in prompt.instructions
+    assert "2 to 4 concise, practical steps" in prompt.instructions
+    assert "warm coaching assistant" in prompt.instructions
+    assert (
+        'Do not\n  begin with formal wording such as "According to'
+        in prompt.instructions
+    )
+
+
 def test_prompt_explicitly_marks_missing_rag_without_connecting_retrieval() -> None:
     prompt = PromptBuilder().build("How can I reflect on this?", [], [])
 

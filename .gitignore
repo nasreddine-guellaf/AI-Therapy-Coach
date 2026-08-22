@@ -6,6 +6,7 @@ __pycache__/
 .mypy_cache/
 node_modules/
 .next/
+.test-dist/
 *.tsbuildinfo
 dist/
 coverage/
@@ -13,3 +14,6 @@ coverage/
 .idea/
 .vscode/
 backend/data/knowledge_base/*.pdf
+backend/data/knowledge_base/manifest.json
+backend/data/knowledge_base/manifest.json.tmp
+backend/evaluations/rag/latest_results*.json

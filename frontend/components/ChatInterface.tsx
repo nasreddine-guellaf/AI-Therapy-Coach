@@ -13,6 +13,7 @@ import type {
   ConversationMessage,
   ConversationSummary,
 } from "@/types/conversation";
+import { completedSources } from "@/utils/sourcePresentation";
 
 import { ConversationHistoryPanel } from "./ConversationHistoryPanel";
 import { MessageBubble } from "./MessageBubble";
@@ -95,7 +96,11 @@ export function ChatInterface() {
       }
       setMessages((current) => [
         ...current,
-        createMessage("assistant", response.message, response.sources),
+        createMessage(
+          "assistant",
+          response.message,
+          completedSources(response.status, response.sources),
+        ),
       ]);
     } catch (requestError) {
       const messageText =

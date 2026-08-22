@@ -41,7 +41,16 @@ python -m app.scripts.ingest_knowledge_base
 ```
 
 The script fails when the directory is missing or contains no PDFs and warns
-when the number of PDFs is not exactly three.
+when the number of PDFs is not exactly three. Use a full rebuild only after all
+three files are present:
+
+```powershell
+python -m app.scripts.ingest_knowledge_base --recreate
+```
+
+`--recreate` deletes and recreates the configured Qdrant collection before
+indexing. Before deletion, it verifies that exactly three distinct PDFs are
+present and that each has extractable text.
 
 ## Idempotency and metadata
 
@@ -49,6 +58,12 @@ Document IDs are deterministic from normalized filenames. Point/source IDs are
 deterministic from filename, page number, and chunk index. Before upserting one
 document, the adapter removes its previous points, preventing duplicate or
 stale chunks when the script is run again.
+
+After a successful complete run, the script atomically writes the ignored
+`manifest.json`. It contains filename, SHA-256 checksum, indexing timestamp,
+chunk count, embedding model, and collection name, but never document text.
+Duplicate PDF content is rejected. Changed checksums and files missing since the
+previous manifest are logged clearly without logging their contents.
 
 Each Qdrant payload contains:
 
@@ -77,8 +92,10 @@ model weights.
 ## Retrieval and prompt grounding
 
 Every ordinary conversation turn queries `therapy_knowledge_chunks`.
-`RAG_TOP_K` defaults to four. Retrieved chunks and their explicit metadata are
-injected into the existing `RETRIEVED RAG CONTEXT` prompt section.
+`RAG_TOP_K` defaults to four. The adapter requests additional candidates, drops
+scores below `RAG_MIN_SCORE` (default `0.25`), removes exact and near-duplicate
+text while retaining the highest score, and injects at most `RAG_TOP_K` chunks
+into the existing `RETRIEVED RAG CONTEXT` prompt section.
 
 The prompt requires the model to use retrieved context as the primary source
 for document-grounded claims, never invent missing content or citations, and
@@ -89,12 +106,46 @@ conversation continues safely with an empty RAG context.
 Sources are returned in the API response and persisted in assistant-message
 metadata so they remain visible when a conversation is reopened.
 
+Safe structured logs contain only retrieval latency, candidate counts,
+post-threshold and post-deduplication counts, whether thresholding removed all
+candidates, and provider error types. Questions, prompts, document text,
+conversation content, and credentials are never logged.
+
+## Reliability evaluation
+
+`backend/evaluations/rag/dataset.json` contains 30 answerable,
+cross-document, unanswerable, multilingual, and safety cases. The runner tests
+retrieval and rule-based safety without invoking the LLM:
+
+```powershell
+cd backend
+python -m app.scripts.evaluate_rag
+python -m app.scripts.evaluate_rag --output evaluations/rag/latest_results.json
+```
+
+Once questions and source IDs have been curated against the final licensed
+PDFs, CI can use `--fail-on-mismatch`.
+
+## Readiness
+
+Authenticated clients can inspect safe collection aggregates:
+
+```http
+GET /api/rag/readiness
+Authorization: Bearer <access_token>
+```
+
+Readiness is `ready` only when Qdrant is reachable, the collection exists,
+exactly three distinct document IDs are indexed, and at least one chunk exists.
+No filename, source text, vector, prompt, or user content is returned.
+
 ## Configuration
 
 ```env
 KNOWLEDGE_BASE_DIR=backend/data/knowledge_base
 RAG_COLLECTION_NAME=therapy_knowledge_chunks
 RAG_TOP_K=4
+RAG_MIN_SCORE=0.25
 EMBEDDING_PROVIDER=local
 EMBEDDING_MODEL=intfloat/multilingual-e5-small
 QDRANT_URL=http://localhost:6333
@@ -106,7 +157,7 @@ QDRANT_API_KEY=
 - exactly one owner-managed knowledge base and embedding model;
 - no OCR, scanned-PDF processing, malware scanning, or licensing checks;
 - no background ingestion queue or admin dashboard;
-- no reranking, score threshold, or automated citation verification;
+- no reranking or automated citation verification;
 - reindexing is per document rather than an atomic collection-wide release;
 - filename changes create a new document identity, so administrators should
   remove obsolete points or recreate the collection when renaming sources.
