@@ -17,3 +17,4 @@ backend/data/knowledge_base/*.pdf
 backend/data/knowledge_base/manifest.json
 backend/data/knowledge_base/manifest.json.tmp
 backend/evaluations/rag/latest_results*.json
+backend/evaluations/rag/latest_generation_results*.json

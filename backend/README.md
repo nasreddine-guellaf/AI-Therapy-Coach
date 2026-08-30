@@ -156,11 +156,23 @@ To use Google Gemini through its OpenAI-compatible endpoint:
 
 ```env
 LLM_PROVIDER=gemini
+LLM_FALLBACK_PROVIDER=openrouter
 GEMINI_API_KEY=your_key_here
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
 GEMINI_MODEL=gemini-3.7-flash
 GEMINI_MAX_OUTPUT_TOKENS=1200
+OPENROUTER_API_KEY=your_openrouter_key_here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=qwen/qwen3-next-80b-a3b-instruct:free
 ```
+
+When Gemini returns a rate-limit/quota error and OpenRouter is configured, the
+backend retries the same provider-neutral request once through OpenRouter. It
+does not fall back for authentication errors, invalid responses, or generic
+provider failures, which prevents configuration problems from being hidden.
+Set `LLM_FALLBACK_PROVIDER=none` to disable fallback. If the OpenRouter key is
+missing, Gemini remains the sole provider and its rate-limit failure is handled
+as `llm_unavailable`.
 
 Never commit `.env` or expose any provider key to the frontend. The backend reads the
 selected credential from environment settings and passes it only to that
@@ -178,9 +190,9 @@ new text-generation applications:
 - <https://developers.openai.com/api/docs/guides/error-codes>
 
 The OpenRouter and Gemini adapters use OpenAI-compatible Chat Completions via
-`client.chat.completions.create`; they do not use the Responses API. The
-application does not automatically fall back between providers: selection is
-explicit and deterministic through `LLM_PROVIDER`.
+`client.chat.completions.create`; they do not use the Responses API. Primary
+selection remains explicit through `LLM_PROVIDER`. The only automatic routing
+is the optional Gemini-to-OpenRouter rate-limit fallback described above.
 
 The Gemini adapter sends `GEMINI_MAX_OUTPUT_TOKENS` as
 `max_completion_tokens`. If Gemini ends with `finish_reason=length`, the
@@ -282,6 +294,17 @@ python -m app.scripts.evaluate_rag `
 After curating exact source IDs for the final three PDFs, use
 `--fail-on-mismatch` in CI.
 
+To evaluate the complete retrieval-to-generation flow with the configured LLM
+while keeping synthetic cases out of PostgreSQL:
+
+```powershell
+python -m app.scripts.evaluate_generation_rag `
+  --output evaluations/rag/latest_generation_results.json
+```
+
+See `evaluations/rag/README.md` for metric definitions, privacy boundaries,
+failure categories, and threshold-tuning guidance.
+
 ### Check RAG readiness
 
 With an authenticated token:
@@ -337,7 +360,9 @@ external request is attempted. With a valid key, the selected adapter generates
 a response, then the domain `ResponseValidator` checks it before it reaches the
 frontend. A Gemini response that remains truncated after the single retry uses
 status `llm_incomplete`, contains no partial generated text or sources, and is
-not stored as an assistant turn.
+not stored as an assistant turn. When the configured Gemini-to-OpenRouter
+fallback also fails, the existing public `llm_unavailable` response is returned;
+raw errors and provider credentials are never exposed.
 
 ## Architecture flow
 

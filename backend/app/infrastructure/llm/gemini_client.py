@@ -13,6 +13,7 @@ from app.domain.interfaces.llm_provider import (
     LLMNotConfiguredError,
     LLMPrompt,
     LLMProvider,
+    LLMRateLimitError,
     LLMServiceUnavailableError,
 )
 
@@ -114,7 +115,7 @@ class GeminiLLMProvider(LLMProvider):
             raise LLMServiceUnavailableError from error
         except openai.RateLimitError as error:
             self._log_error_type(type(error))
-            raise LLMServiceUnavailableError from error
+            raise LLMRateLimitError from error
         except (openai.APIConnectionError, openai.APITimeoutError) as error:
             self._log_error_type(type(error))
             raise LLMServiceUnavailableError from error

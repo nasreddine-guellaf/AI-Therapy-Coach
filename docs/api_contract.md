@@ -43,6 +43,11 @@ or expired tokens return HTTP `401`.
 
 Runs one safe text conversation turn.
 
+Provider routing does not change this public contract. When Gemini is selected
+and reaches its rate limit, the backend may retry through the configured
+OpenRouter fallback. If both providers are unavailable, the endpoint returns
+the existing safe `llm_unavailable` status without raw provider details.
+
 This endpoint requires a valid Bearer token. `user_id` is never accepted from
 the request; the backend derives it from the signed JWT subject.
 

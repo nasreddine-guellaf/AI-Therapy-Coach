@@ -12,6 +12,7 @@ from app.domain.interfaces.llm_provider import (
     LLMInvalidResponseError,
     LLMNotConfiguredError,
     LLMPrompt,
+    LLMRateLimitError,
     LLMServiceUnavailableError,
 )
 from app.infrastructure.llm.gemini_client import GeminiLLMProvider
@@ -241,6 +242,23 @@ def test_gemini_provider_maps_sdk_errors_safely(
     assert "Private user message" not in caplog.text
     assert "Stay in scope." not in caplog.text
     assert str(provider_error) not in caplog.text
+
+
+def test_gemini_provider_exposes_rate_limit_as_retryable_domain_error() -> None:
+    provider_error = openai.RateLimitError(
+        "rate limited",
+        response=_response(429),
+        body=None,
+    )
+    provider = GeminiLLMProvider(
+        api_key=None,
+        base_url=GEMINI_URL,
+        model="test-gemini-model",
+        client=FailingGeminiClient(provider_error),
+    )
+
+    with pytest.raises(LLMRateLimitError):
+        asyncio.run(provider.generate(PROMPT))
 
 
 @pytest.mark.parametrize(

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     embedding_provider: Literal["local"] = "local"
     embedding_model: str = "intfloat/multilingual-e5-small"
     llm_provider: Literal["openai", "openrouter", "gemini"] = "openai"
+    llm_fallback_provider: Literal["none", "openrouter"] = "openrouter"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-luna"
     openai_timeout_seconds: float = 30.0

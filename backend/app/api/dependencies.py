@@ -14,6 +14,7 @@ from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.rag_readiness_service import RAGReadinessService
 from app.domain.services.rag_context_policy import RAGContextPolicy
 from app.domain.services.safety_service import SafetyService
+from app.infrastructure.llm.fallback_provider import RateLimitFallbackLLMProvider
 from app.infrastructure.llm.gemini_client import GeminiLLMProvider
 from app.infrastructure.llm.openai_client import OpenAILLMProvider
 from app.infrastructure.llm.openrouter_client import OpenRouterLLMProvider
@@ -32,18 +33,44 @@ logger = logging.getLogger(__name__)
 def build_llm_provider() -> LLMProvider:
     """Create the configured provider adapter at the application boundary."""
     if settings.llm_provider == "gemini":
+        openrouter_key_present = bool(
+            settings.openrouter_api_key
+            and settings.openrouter_api_key.strip()
+        )
         logger.info(
-            "LLM configuration: provider=%s api_key_present=%s model=%s",
+            "LLM configuration: provider=%s api_key_present=%s model=%s "
+            "fallback=%s fallback_api_key_present=%s",
             settings.llm_provider,
             bool(settings.gemini_api_key and settings.gemini_api_key.strip()),
             settings.gemini_model,
+            settings.llm_fallback_provider,
+            openrouter_key_present,
         )
-        return GeminiLLMProvider(
+        primary = GeminiLLMProvider(
             api_key=settings.gemini_api_key,
             base_url=settings.gemini_base_url,
             model=settings.gemini_model,
             timeout_seconds=settings.openai_timeout_seconds,
             max_output_tokens=settings.gemini_max_output_tokens,
+        )
+        if (
+            settings.llm_fallback_provider != "openrouter"
+            or not openrouter_key_present
+        ):
+            return primary
+
+        fallback = OpenRouterLLMProvider(
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+            model=settings.openrouter_model,
+            timeout_seconds=settings.openai_timeout_seconds,
+            max_output_tokens=settings.openai_max_output_tokens,
+        )
+        return RateLimitFallbackLLMProvider(
+            primary,
+            fallback,
+            primary_name="gemini",
+            fallback_name="openrouter",
         )
 
     if settings.llm_provider == "openrouter":

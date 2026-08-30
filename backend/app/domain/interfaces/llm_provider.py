@@ -31,6 +31,10 @@ class LLMServiceUnavailableError(LLMProviderError):
     """Raised for provider connectivity, timeout, quota, or API failures."""
 
 
+class LLMRateLimitError(LLMServiceUnavailableError):
+    """Raised when a provider rejects generation because its quota is exhausted."""
+
+
 class LLMInvalidResponseError(LLMProviderError):
     """Raised when the provider returns no usable assistant text."""
 

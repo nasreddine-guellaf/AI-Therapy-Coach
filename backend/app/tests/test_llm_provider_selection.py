@@ -3,6 +3,7 @@
 from app.api.dependencies import build_llm_provider
 from app.core.config import settings
 from app.infrastructure.llm.gemini_client import GeminiLLMProvider
+from app.infrastructure.llm.fallback_provider import RateLimitFallbackLLMProvider
 from app.infrastructure.llm.openai_client import OpenAILLMProvider
 from app.infrastructure.llm.openrouter_client import OpenRouterLLMProvider
 
@@ -38,6 +39,7 @@ def test_openrouter_selection_logs_safe_configuration(monkeypatch, caplog) -> No
 def test_gemini_selection_logs_safe_configuration(monkeypatch, caplog) -> None:
     monkeypatch.setattr(settings, "llm_provider", "gemini")
     monkeypatch.setattr(settings, "gemini_api_key", "gemini-secret-test-key")
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
     caplog.set_level("INFO", logger="app.api.dependencies")
 
     provider = build_llm_provider()
@@ -59,6 +61,7 @@ def test_gemini_selection_without_key_stays_unconfigured(
 ) -> None:
     monkeypatch.setattr(settings, "llm_provider", "gemini")
     monkeypatch.setattr(settings, "gemini_api_key", None)
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
     caplog.set_level("INFO", logger="app.api.dependencies")
 
     provider = build_llm_provider()
@@ -67,3 +70,28 @@ def test_gemini_selection_without_key_stays_unconfigured(
     assert not provider.is_configured
     assert "provider=gemini" in caplog.text
     assert "api_key_present=False" in caplog.text
+
+
+def test_gemini_selection_composes_openrouter_rate_limit_fallback(
+    monkeypatch,
+    caplog,
+) -> None:
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "llm_fallback_provider", "openrouter")
+    monkeypatch.setattr(settings, "gemini_api_key", "gemini-secret-test-key")
+    monkeypatch.setattr(
+        settings,
+        "openrouter_api_key",
+        "openrouter-secret-test-key",
+    )
+    caplog.set_level("INFO", logger="app.api.dependencies")
+
+    provider = build_llm_provider()
+
+    assert isinstance(provider, RateLimitFallbackLLMProvider)
+    assert isinstance(provider.primary, GeminiLLMProvider)
+    assert isinstance(provider.fallback, OpenRouterLLMProvider)
+    assert "fallback=openrouter" in caplog.text
+    assert "fallback_api_key_present=True" in caplog.text
+    assert "gemini-secret-test-key" not in caplog.text
+    assert "openrouter-secret-test-key" not in caplog.text
