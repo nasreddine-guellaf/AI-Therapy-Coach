@@ -776,6 +776,39 @@ a:focus-visible {
   line-height: 1.6;
 }
 
+.assistant-markdown {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.assistant-markdown p {
+  margin: 0;
+  white-space: normal;
+}
+
+.assistant-markdown p + p,
+.assistant-markdown ul + p,
+.assistant-markdown ol + p,
+.assistant-markdown p + ul,
+.assistant-markdown p + ol {
+  margin-top: 8px;
+}
+
+.assistant-markdown ul,
+.assistant-markdown ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+
+.assistant-markdown li + li {
+  margin-top: 3px;
+}
+
+.assistant-markdown strong {
+  font-weight: 750;
+}
+
 .typing-indicator {
   min-width: 58px;
   padding: 14px;

@@ -230,6 +230,7 @@ KNOWLEDGE_BASE_DIR=backend/data/knowledge_base
 RAG_COLLECTION_NAME=therapy_knowledge_chunks
 RAG_TOP_K=4
 RAG_MIN_SCORE=0.25
+RAG_DOCUMENT_QUESTION_MIN_SCORE=0.35
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=
 EMBEDDING_PROVIDER=local
@@ -260,9 +261,17 @@ near-duplicate chunks while retaining the highest-scoring one, and returns at
 most `RAG_TOP_K` sources. Safe logs include only latency, counts, threshold
 outcomes, and error types.
 
+Explicit document questions additionally require
+`RAG_DOCUMENT_QUESTION_MIN_SCORE` (default `0.35`). If no chunk passes, the LLM
+still provides safe general coaching where appropriate, prefixed by a clear
+document-insufficiency notice. The response reports `rag_availability=none`
+and returns no sources. Medical requests are refused and crisis messages still
+short-circuit through `SafetyService`.
+
 ### Run the RAG evaluation
 
-The 30-case baseline measures retrieval and safety without calling the LLM:
+The 30-case baseline measures retrieval and safety without calling the LLM. It
+reports per-chunk and aggregate similarity scores plus scores by category:
 
 ```powershell
 python -m app.scripts.evaluate_rag

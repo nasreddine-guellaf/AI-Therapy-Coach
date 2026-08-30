@@ -1,3 +1,6 @@
+import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+
 import type { ConversationMessage } from "@/types/conversation";
 import {
   deduplicateSources,
@@ -8,8 +11,20 @@ interface MessageBubbleProps {
   message: ConversationMessage;
 }
 
+const REMARK_PLUGINS = [remarkBreaks];
+const SAFE_MARKDOWN_ELEMENTS = [
+  "p",
+  "strong",
+  "em",
+  "ul",
+  "ol",
+  "li",
+  "br",
+];
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
   const label = isUser ? "You" : "Coach";
   const time = new Intl.DateTimeFormat("en", {
     hour: "2-digit",
@@ -30,7 +45,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <span>{label}</span>
           <time dateTime={message.createdAt}>{time}</time>
         </div>
-        <p>{message.content}</p>
+        {isAssistant ? (
+          <div className="assistant-markdown">
+            <ReactMarkdown
+              allowedElements={SAFE_MARKDOWN_ELEMENTS}
+              remarkPlugins={REMARK_PLUGINS}
+              skipHtml
+              unwrapDisallowed
+            >
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <p>{message.content}</p>
+        )}
         {!isUser && sources.length > 0 ? (
           <div className="message-sources" aria-label="Response sources">
             <strong>Sources</strong>

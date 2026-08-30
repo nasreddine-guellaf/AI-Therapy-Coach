@@ -47,7 +47,7 @@ def test_prompt_marks_available_rag_as_primary_grounding_context() -> None:
     assert "availability=provided" in prompt.input
     assert "use them as the primary factual" in prompt.instructions
     assert "Never create fake citations" in prompt.instructions
-    assert "do not contain enough information" in prompt.instructions
+    assert "do not provide enough information" in prompt.instructions
 
 
 def test_rag_style_is_warm_practical_and_not_a_formal_document_summary() -> None:
@@ -72,7 +72,25 @@ def test_prompt_explicitly_marks_missing_rag_without_connecting_retrieval() -> N
     assert "availability=none" in prompt.input
     assert "RETRIEVED RAG CONTEXT" in prompt.input
     assert "[]" in prompt.input
-    assert "general coaching guidance only" in prompt.instructions
+    assert "general coaching guidance is allowed" in prompt.instructions
+    assert "Do not cite sources" in prompt.instructions
+
+
+def test_document_specific_fallback_is_explicitly_separated_from_rag() -> None:
+    prompt = PromptBuilder().build(
+        "Selon les documents, comment gérer ce problème ?",
+        [],
+        [],
+        document_specific=True,
+        document_context_insufficient=True,
+    )
+
+    assert "availability=none" in prompt.input
+    assert "question_scope=document_specific" in prompt.input
+    assert "document_context_insufficient=true" in prompt.input
+    assert "Never use general knowledge to fill a missing document claim" in (
+        prompt.instructions
+    )
 
 
 def test_context_cannot_be_confused_with_system_instructions() -> None:

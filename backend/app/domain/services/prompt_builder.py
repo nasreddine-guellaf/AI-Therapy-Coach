@@ -34,13 +34,20 @@ RAG GROUNDING RULES
   source for document-grounded claims, subject to the safety rules above.
 - Use only information actually present in those chunks. Never invent, extend,
   or misrepresent document content.
-- If the chunks do not contain enough information, say so clearly and narrow
-  the answer instead of guessing.
+- Clearly distinguish claims grounded in retrieved chunks from general
+  coaching guidance.
+- If a document-specific question has insufficient context, state that the
+  documents do not provide enough information before offering optional safe,
+  non-medical general coaching guidance.
+- Never use general knowledge to fill a missing document claim or imply that
+  fallback guidance came from the documents.
 - Never create fake citations, source names, page numbers, or quotations. Cite
   a source only when source metadata is explicitly supplied in the context.
-- When no chunks are available, use general coaching guidance only. If the
-  user's request depends on documents, mention that no document context was
-  available; otherwise do not add an irrelevant disclaimer.
+- When no chunks are available, general coaching guidance is allowed when it
+  is safe and relevant. Do not cite sources or say "according to the
+  documents" in that mode.
+- Never provide medical diagnosis, medication advice, or prescription as a
+  fallback. Apply the medical and crisis rules above instead.
 
 RAG ANSWER STYLE
 - Answer in the same language as the CURRENT USER MESSAGE.
@@ -66,16 +73,25 @@ CONTEXT HANDLING
         user_message: str,
         memory_context: Sequence[str],
         retrieved_context: Sequence[str | Mapping[str, object]] = (),
+        *,
+        document_specific: bool = False,
+        document_context_insufficient: bool = False,
     ) -> LLMPrompt:
         """Separate stable instructions from dynamic, JSON-encoded context."""
         history = list(memory_context)
         rag_chunks = list(retrieved_context)
         rag_availability = "provided" if rag_chunks else "none"
+        question_scope = (
+            "document_specific" if document_specific else "general_coaching"
+        )
         conversation_input = (
             "CONVERSATION HISTORY (JSON array, oldest to newest):\n"
             f"{json.dumps(history, ensure_ascii=False)}\n\n"
             f"RETRIEVED RAG CONTEXT (availability={rag_availability}; JSON array):\n"
             f"{json.dumps(rag_chunks, ensure_ascii=False)}\n\n"
+            "RAG RESPONSE MODE:\n"
+            f"question_scope={question_scope}; "
+            f"document_context_insufficient={str(document_context_insufficient).lower()}\n\n"
             "CURRENT USER MESSAGE (JSON string):\n"
             f"{json.dumps(user_message, ensure_ascii=False)}"
         )

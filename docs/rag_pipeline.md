@@ -97,11 +97,16 @@ scores below `RAG_MIN_SCORE` (default `0.25`), removes exact and near-duplicate
 text while retaining the highest score, and injects at most `RAG_TOP_K` chunks
 into the existing `RETRIEVED RAG CONTEXT` prompt section.
 
-The prompt requires the model to use retrieved context as the primary source
-for document-grounded claims, never invent missing content or citations, and
-state when the evidence is insufficient. General coaching guidance remains
-available when appropriate. If Qdrant is unavailable or returns no chunks, the
-conversation continues safely with an empty RAG context.
+Questions explicitly asking what the documents say use
+`RAG_DOCUMENT_QUESTION_MIN_SCORE` (default `0.35`). Weak chunks are excluded
+from the prompt and from API sources. The LLM still receives the conversation
+with `availability=none`, so it can offer safe general coaching while clearly
+disclosing that the documents are insufficient.
+
+The prompt requires the model to distinguish document-grounded claims from
+general guidance, never invent missing content or citations, and never claim
+document support when context is empty. If Qdrant is unavailable or returns no
+chunks, the conversation continues safely with an empty RAG context.
 
 Sources are returned in the API response and persisted in assistant-message
 metadata so they remain visible when a conversation is reopened.
@@ -122,6 +127,11 @@ cd backend
 python -m app.scripts.evaluate_rag
 python -m app.scripts.evaluate_rag --output evaluations/rag/latest_results.json
 ```
+
+Reports include per-chunk scores, maximum/minimum/average retrieval score,
+accepted-versus-rejected chunk counts, and category scores. An unanswerable
+case passes when no document source is accepted; generation is expected to use
+the safe general-fallback mode rather than return no answer.
 
 Once questions and source IDs have been curated against the final licensed
 PDFs, CI can use `--fail-on-mismatch`.
@@ -146,6 +156,7 @@ KNOWLEDGE_BASE_DIR=backend/data/knowledge_base
 RAG_COLLECTION_NAME=therapy_knowledge_chunks
 RAG_TOP_K=4
 RAG_MIN_SCORE=0.25
+RAG_DOCUMENT_QUESTION_MIN_SCORE=0.35
 EMBEDDING_PROVIDER=local
 EMBEDDING_MODEL=intfloat/multilingual-e5-small
 QDRANT_URL=http://localhost:6333

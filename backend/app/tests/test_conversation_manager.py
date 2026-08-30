@@ -313,7 +313,132 @@ def test_unanswerable_retrieval_returns_no_sources_and_marks_context_none() -> N
 
     assert provider.prompt is not None
     assert "availability=none" in provider.prompt.input
+    assert result.status == "completed"
+    assert result.rag_availability == "none"
     assert result.rag_chunks_used == 0
+    assert result.source_ids == []
+    assert result.sources == []
+
+
+def test_general_coaching_without_chunks_still_calls_llm_without_sources() -> None:
+    provider = StubLLMProvider(
+        "It may help to pause, name the feeling, and choose one small next step."
+    )
+    manager, _, messages, _ = build_manager(
+        llm=provider,
+        retriever=EmptyRetriever(),
+    )
+
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(
+                message="I feel overwhelmed. Can you help me reflect?",
+                user_id=USER_ID,
+            )
+        )
+    )
+
+    assert provider.prompt is not None
+    assert "question_scope=general_coaching" in provider.prompt.input
+    assert result.status == "completed"
+    assert result.rag_chunks_used == 0
+    assert result.rag_availability == "none"
+    assert result.source_ids == []
+    assert result.sources == []
+    assert messages.messages[-1].role is MessageRole.ASSISTANT
+    assert messages.messages[-1].metadata is None
+
+
+def test_weak_document_question_adds_insufficiency_notice_and_fallback() -> None:
+    class WeakRetriever(ChunkRetriever):
+        async def retrieve_relevant_chunks(
+            self, query: str, top_k: int = 5
+        ) -> list[RetrievedChunk]:
+            return [
+                RetrievedChunk(
+                    id="weak-point",
+                    text="A weakly related passage.",
+                    score=0.30,
+                    metadata={
+                        "source_id": "weak-source",
+                        "filename": "guide.pdf",
+                    },
+                )
+            ]
+
+    provider = StubLLMProvider(
+        "Tu peux commencer par identifier une petite étape concrète."
+    )
+    manager, _, _, _ = build_manager(
+        llm=provider,
+        retriever=WeakRetriever(),
+    )
+
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(
+                message="Selon les documents, que faire dans cette situation ?",
+                user_id=USER_ID,
+            )
+        )
+    )
+
+    assert provider.prompt is not None
+    assert "availability=none" in provider.prompt.input
+    assert "document_context_insufficient=true" in provider.prompt.input
+    assert result.status == "completed"
+    assert result.message.startswith(
+        "Les documents disponibles ne donnent pas assez "
+        "d\u2019informations sur ce point."
+    )
+    assert "petite étape" in result.message
+    assert result.rag_chunks_used == 0
+    assert result.rag_availability == "none"
+    assert result.source_ids == []
+    assert result.sources == []
+
+
+def test_medical_prescription_request_returns_safe_refusal() -> None:
+    provider = StubLLMProvider("Take 20 mg of this medication every day.")
+    manager, _, messages, _ = build_manager(
+        llm=provider,
+        retriever=EmptyRetriever(),
+    )
+
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(
+                message="What dosage of antidepressant should I take?",
+                user_id=USER_ID,
+            )
+        )
+    )
+
+    assert provider.prompt is not None
+    assert result.status == "validation_failed"
+    assert "cannot provide" in result.message
+    assert "qualified healthcare professional" in result.message
+    assert result.sources == []
+    assert [message.role for message in messages.messages] == [MessageRole.USER]
+
+
+def test_empty_rag_context_never_returns_fake_structured_sources() -> None:
+    provider = StubLLMProvider("A general coaching reflection can still help.")
+    manager, _, _, _ = build_manager(
+        llm=provider,
+        retriever=EmptyRetriever(),
+    )
+
+    result = asyncio.run(
+        manager.handle(
+            ConversationCommand(message="Help me reflect", user_id=USER_ID)
+        )
+    )
+
+    assert provider.prompt is not None
+    assert "Never create fake citations" in provider.prompt.instructions
+    assert "availability=none" in provider.prompt.input
+    assert result.status == "completed"
     assert result.source_ids == []
     assert result.sources == []
 
@@ -350,6 +475,7 @@ def test_rag_context_and_sources_are_returned_and_persisted() -> None:
     assert result.source_ids == ["source-1"]
     assert result.sources[0].filename == "guide.pdf"
     assert result.rag_chunks_used == 1
+    assert result.rag_availability == "provided"
     assert messages.messages[-1].metadata == {
         "sources": [
             {

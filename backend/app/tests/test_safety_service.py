@@ -15,6 +15,7 @@ from app.domain.services.safety_service import (
         ("I want to hurt myself", RiskCategory.SELF_HARM),
         ("I think about suicide", RiskCategory.SUICIDAL_IDEATION),
         ("Can you diagnose me?", RiskCategory.MEDICAL_DIAGNOSIS_REQUEST),
+        ("What dosage should I take?", RiskCategory.MEDICATION_REQUEST),
         ("I am in immediate danger", RiskCategory.CRISIS),
         ("I cannot cope anymore", RiskCategory.SEVERE_DISTRESS),
     ],

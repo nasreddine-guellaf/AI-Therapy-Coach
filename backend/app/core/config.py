@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     rag_collection_name: str = "therapy_knowledge_chunks"
     rag_top_k: int = Field(default=4, gt=0, le=20)
     rag_min_score: float = Field(default=0.25, ge=-1.0, le=1.0)
+    rag_document_question_min_score: float = Field(
+        default=0.35,
+        ge=-1.0,
+        le=1.0,
+    )
     embedding_provider: Literal["local"] = "local"
     embedding_model: str = "intfloat/multilingual-e5-small"
     llm_provider: Literal["openai", "openrouter", "gemini"] = "openai"

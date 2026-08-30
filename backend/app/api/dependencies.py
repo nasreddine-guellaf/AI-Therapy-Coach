@@ -12,6 +12,7 @@ from app.domain.services.conversation_history_service import ConversationHistory
 from app.domain.services.prompt_builder import PromptBuilder
 from app.domain.services.response_validator import ResponseValidator
 from app.domain.services.rag_readiness_service import RAGReadinessService
+from app.domain.services.rag_context_policy import RAGContextPolicy
 from app.domain.services.safety_service import SafetyService
 from app.infrastructure.llm.gemini_client import GeminiLLMProvider
 from app.infrastructure.llm.openai_client import OpenAILLMProvider
@@ -88,6 +89,9 @@ def get_conversation_manager() -> ConversationManager:
         llm_provider=build_llm_provider(),
         response_validator=ResponseValidator(),
         safety_service=SafetyService(),
+        rag_context_policy=RAGContextPolicy(
+            settings.rag_document_question_min_score
+        ),
         retrieval_top_k=settings.rag_top_k,
     )
 

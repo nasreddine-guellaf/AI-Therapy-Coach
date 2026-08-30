@@ -27,6 +27,7 @@ export interface ConversationResponse {
   session_id: string | null;
   memory_items_used: number;
   rag_chunks_used: number;
+  rag_availability: "provided" | "none";
   source_ids: string[];
   sources: RAGSource[];
 }

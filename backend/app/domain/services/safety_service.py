@@ -15,6 +15,7 @@ class RiskCategory(StrEnum):
     SELF_HARM = "self_harm"
     SUICIDAL_IDEATION = "suicidal_ideation"
     MEDICAL_DIAGNOSIS_REQUEST = "medical_diagnosis_request"
+    MEDICATION_REQUEST = "medication_request"
     CRISIS = "crisis"
     SEVERE_DISTRESS = "severe_distress"
 
@@ -77,6 +78,17 @@ class SafetyService:
             "est-ce que je suis dépressif",
             "diagnostic médical",
         ),
+        RiskCategory.MEDICATION_REQUEST: (
+            "what dosage",
+            "what dose",
+            "which medication should i take",
+            "prescribe medication",
+            "prescribe me",
+            "quelle dose",
+            "quel dosage",
+            "quel medicament prendre",
+            "prescris-moi",
+        ),
         RiskCategory.CRISIS: (
             "immediate danger",
             "emergency situation",
@@ -121,7 +133,10 @@ class SafetyService:
             level = RiskLevel.CRITICAL
         elif RiskCategory.SEVERE_DISTRESS in category_set:
             level = RiskLevel.HIGH
-        elif RiskCategory.MEDICAL_DIAGNOSIS_REQUEST in category_set:
+        elif category_set & {
+            RiskCategory.MEDICAL_DIAGNOSIS_REQUEST,
+            RiskCategory.MEDICATION_REQUEST,
+        }:
             level = RiskLevel.CAUTION
         else:
             level = RiskLevel.NONE

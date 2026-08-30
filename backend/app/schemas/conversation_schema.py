@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
+from typing import Literal
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 
 class ConversationRequest(BaseModel):
@@ -21,5 +23,6 @@ class ConversationResponse(BaseModel):
     session_id: UUID | None = None
     memory_items_used: int = 0
     rag_chunks_used: int = 0
+    rag_availability: Literal["provided", "none"] = "none"
     source_ids: list[str] = Field(default_factory=list)
     sources: list[RAGSourceResponse] = Field(default_factory=list)

@@ -59,6 +59,7 @@ async def send_message(
         session_id=result.session_id,
         memory_items_used=result.memory_items_used,
         rag_chunks_used=result.rag_chunks_used,
+        rag_availability=result.rag_availability,
         source_ids=result.source_ids,
         sources=[
             RAGSourceResponse(

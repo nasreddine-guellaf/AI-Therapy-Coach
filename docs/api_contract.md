@@ -71,6 +71,7 @@ HTTP `202 Accepted`:
   "session_id": "10000000-0000-0000-0000-000000000001",
   "memory_items_used": 4,
   "rag_chunks_used": 0,
+  "rag_availability": "none",
   "source_ids": [],
   "sources": []
 }
@@ -108,7 +109,15 @@ knowledge base. When chunks are available, `sources` contains `source_id`,
 Candidates below `RAG_MIN_SCORE` are removed and near-duplicate chunks are
 collapsed before prompt construction. If no candidates remain,
 `rag_chunks_used` is `0`, `source_ids` and `sources` are empty, and
-`PromptBuilder` receives `availability=none`.
+`PromptBuilder` receives `availability=none`. The LLM is still called for safe
+general coaching unless `SafetyService` requires immediate escalation.
+
+Explicit document questions use the stricter
+`RAG_DOCUMENT_QUESTION_MIN_SCORE`. When no chunk passes it, the response first
+states that the documents are insufficient, then may provide clearly separated
+general non-medical guidance. `rag_availability` is `provided` only when chunks
+were injected; otherwise it is `none`. Sources are never attached to fallback
+guidance.
 
 Sources are returned only when `status` is `completed`. Provider failures,
 validation failures, and Gemini truncation after one retry return empty

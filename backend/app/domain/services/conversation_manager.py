@@ -21,8 +21,9 @@ from app.domain.interfaces.retriever import (
     RetrievalUnavailableError,
 )
 from app.domain.services.prompt_builder import PromptBuilder
+from app.domain.services.rag_context_policy import RAGContextPolicy
 from app.domain.services.response_validator import ResponseValidator
-from app.domain.services.safety_service import SafetyService
+from app.domain.services.safety_service import RiskCategory, SafetyService
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class ConversationResult:
     session_id: UUID | None = None
     memory_items_used: int = 0
     rag_chunks_used: int = 0
+    rag_availability: str = "none"
     source_ids: list[str] = field(default_factory=list)
     sources: list["ConversationSource"] = field(default_factory=list)
 
@@ -73,6 +75,7 @@ class ConversationManager:
         llm_provider: LLMProvider,
         response_validator: ResponseValidator,
         safety_service: SafetyService,
+        rag_context_policy: RAGContextPolicy | None = None,
         *,
         memory_limit: int = 8,
         retrieval_top_k: int = 5,
@@ -89,6 +92,7 @@ class ConversationManager:
         self.llm_provider = llm_provider
         self.response_validator = response_validator
         self.safety_service = safety_service
+        self.rag_context_policy = rag_context_policy or RAGContextPolicy()
         self.memory_limit = memory_limit
         self.retrieval_top_k = retrieval_top_k
 
@@ -136,6 +140,8 @@ class ConversationManager:
             )
         except RetrievalUnavailableError:
             chunks = []
+        context_decision = self.rag_context_policy.select(user_message, chunks)
+        chunks = context_decision.chunks
         sources = self._sources(chunks)
         prompt = self.prompt_builder.build(
             user_message=user_message,
@@ -150,6 +156,10 @@ class ConversationManager:
                 }
                 for chunk in chunks
             ],
+            document_specific=context_decision.document_specific,
+            document_context_insufficient=(
+                context_decision.insufficient_document_context
+            ),
         )
         try:
             generated_response = await self.llm_provider.generate(prompt)
@@ -160,6 +170,7 @@ class ConversationManager:
                 session_id=session.id,
                 memory_items_used=len(memory),
                 rag_chunks_used=len(chunks),
+                rag_availability="provided" if chunks else "none",
             )
         except LLMProviderError as error:
             return ConversationResult(
@@ -168,6 +179,13 @@ class ConversationManager:
                 session_id=session.id,
                 memory_items_used=len(memory),
                 rag_chunks_used=len(chunks),
+                rag_availability="provided" if chunks else "none",
+            )
+
+        if context_decision.insufficient_document_context:
+            generated_response = self.rag_context_policy.add_insufficiency_notice(
+                user_message,
+                generated_response,
             )
 
         if not self.response_validator.validate(
@@ -176,7 +194,18 @@ class ConversationManager:
                 safety_assessment.professional_help_recommended
             ),
         ):
-            return self._validation_failure(session.id, memory, chunks)
+            return self._validation_failure(
+                session.id,
+                memory,
+                chunks,
+                medical_refusal_required=bool(
+                    set(safety_assessment.categories)
+                    & {
+                        RiskCategory.MEDICAL_DIAGNOSIS_REQUEST,
+                        RiskCategory.MEDICATION_REQUEST,
+                    }
+                ),
+            )
 
         assistant_response = generated_response.strip()
         try:
@@ -208,6 +237,7 @@ class ConversationManager:
             session_id=session.id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
+            rag_availability="provided" if chunks else "none",
             source_ids=[source.source_id for source in sources],
             sources=sources,
         )
@@ -217,17 +247,26 @@ class ConversationManager:
         session_id: UUID,
         memory: list[str],
         chunks: list[RetrievedChunk],
+        *,
+        medical_refusal_required: bool = False,
     ) -> ConversationResult:
         """Return a safe failure without leaking a rejected model response."""
-        return ConversationResult(
-            message=(
+        message = (
+            "I cannot provide a medical diagnosis or medication prescription. "
+            "Please consult a qualified healthcare professional."
+            if medical_refusal_required
+            else (
                 "I could not produce a response that passed the safety and "
                 "quality checks. Please try rephrasing your message."
-            ),
+            )
+        )
+        return ConversationResult(
+            message=message,
             status="validation_failed",
             session_id=session_id,
             memory_items_used=len(memory),
             rag_chunks_used=len(chunks),
+            rag_availability="provided" if chunks else "none",
         )
 
     @staticmethod

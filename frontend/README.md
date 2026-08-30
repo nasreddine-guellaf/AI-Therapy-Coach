@@ -59,6 +59,10 @@ formatted as reader-facing labels such as
 values stay hidden; set `NEXT_PUBLIC_SHOW_SOURCE_IDS=true` only in a local
 developer/debug environment to display them.
 
+Assistant responses are rendered as Markdown for paragraphs, emphasis, lists,
+and line breaks. User messages remain plain text, and raw HTML from generated
+responses is ignored rather than inserted into the page.
+
 For this local MVP, only the JWT is stored under the versioned `localStorage`
 key `therapy-coach:access-token:v1`. Production should prefer a
 backend-for-frontend session with `HttpOnly`, `Secure`, `SameSite` cookies.
